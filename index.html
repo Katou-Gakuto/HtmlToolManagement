@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ダンジョン型ファイル仕分けシステム</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- ヘッダー（ステータス表示） -->
+    <header class="game-header">
+        <div class="header-title">📂 Dungeon File Organizer</div>
+        <div class="header-badges">
+            <span id="file-count-badge" class="badge">未整理: -- 件</span>
+            <span id="transaction-badge" class="badge badge-pending">変更予定: 0 件</span>
+        </div>
+        <button id="btn-manager-ui" class="btn-primary">🔔 管理人を呼ぶ (Cキー)</button>
+    </header>
+
+    <!-- メインコンテンツ（左端ドックバー ＋ 可変ワークスペース） -->
+    <main class="main-layout">
+        
+        <!-- 左端：ウィンドウのON/OFFを切り替えるドックバー -->
+        <nav class="dock-bar" id="dock-scroller">
+            <button class="dock-btn active" data-target="win-file-view" title="仕分け操作">📄</button>
+            <button class="dock-btn active" data-target="win-preview-view" title="行き先予定">🚪</button>
+            <button class="dock-btn" data-target="win-log-view" title="実行ログ">📜</button>
+            <button class="dock-btn" data-target="win-skill-view" title="スキル枠">⚡</button>
+        </nav>
+        
+        <!-- ワークスペース -->
+        <div class="workspace" id="main-workspace">
+            
+            <!-- 💡 左側：縦積みのマルチウィンドウコンテナ（ここ自体も右端の境界線で横幅を変更可能） -->
+            <div class="side-panel" id="left-side-panel">
+                <div class="windows-stack" id="windows-container">
+                    
+                    <!-- 1. 仕分けビュー -->
+                    <div id="win-file-view" class="resizable-window" draggable="true">
+                        <div class="window-header">
+                            <span class="drag-handle">☰ 📄 仕分け操作</span>
+                            <button class="win-close-btn" data-target="win-file-view">×</button>
+                        </div>
+                        <div class="window-body">
+                            <h3 id="panel-file-title">対象ファイル: なし</h3>
+                            <p id="panel-file-status">ステータス: 未選択</p>
+                            <div id="folder-buttons-container" class="button-stack">
+                                <p class="placeholder-text">ファイルに近づいてSPACEを押すと、ここに仕分け先フォルダが表示されます。</p>
+                            </div>
+                            <div class="action-row">
+                                <button id="btn-hold" class="btn-secondary">保留</button>
+                                <button id="btn-delete" class="btn-danger">削除</button>
+                            </div>
+                        </div>
+                        <div class="resizer-y"></div> <!-- 💡 下側の高さ調整用ツマミ -->
+                    </div>
+
+                    <!-- 2. プレビュービュー -->
+                    <div id="win-preview-view" class="resizable-window" draggable="true">
+                        <div class="window-header">
+                            <span class="drag-handle">☰ 🚪 行き先予定</span>
+                            <button class="win-close-btn" data-target="win-preview-view">×</button>
+                        </div>
+                        <div class="window-body">
+                            <p class="instruction-text">仕分け先として登録されているファイルの一覧です。</p>
+                            <div id="preview-list-container">
+                                <p class="placeholder-text">現在、移動予定のファイルはありません。</p>
+                            </div>
+                        </div>
+                        <div class="resizer-y"></div>
+                    </div>
+
+                    <!-- 3. ログビュー -->
+                    <div id="win-log-view" class="resizable-window hidden-window" draggable="true">
+                        <div class="window-header">
+                            <span class="drag-handle">☰ 📜 実行ログ</span>
+                            <button class="win-close-btn" data-target="win-log-view">×</button>
+                        </div>
+                        <div class="window-body">
+                            <div id="log-list" class="log-container">
+                                <div class="log-item system">システムが起動しました。</div>
+                            </div>
+                        </div>
+                        <div class="resizer-y"></div>
+                    </div>
+
+                    <!-- 4. スキルビュー -->
+                    <div id="win-skill-view" class="resizable-window hidden-window" draggable="true">
+                        <div class="window-header">
+                            <span class="drag-handle">☰ ⚡ スキル枠</span>
+                            <button class="win-close-btn" data-target="win-skill-view">×</button>
+                        </div>
+                        <div class="window-body">
+                            <p class="placeholder-text">（Phase 2: スキル枠システム - 準備中）</p>
+                            <div class="skill-card locked">
+                                <h4>🔍 拡張子スキャン (Passive)</h4>
+                                <p>ファイルの種別を色別で識別する。</p>
+                            </div>
+                            <div class="skill-card locked">
+                                <h4>🧲 一括マグネット (Active)</h4>
+                                <p>同じ種類のファイルを一気に引き寄せる。</p>
+                            </div>
+                        </div>
+                        <div class="resizer-y"></div>
+                    </div>
+
+                </div>
+                <div class="resizer-x"></div> <!-- 💡 サイドパネル自体の横幅調整用ツマミ -->
+            </div>
+
+            <!-- 右側：ゲーム・マップ画面エリア（パネルが縮むと自動で広がる） -->
+            <section class="canvas-container" id="map-area">
+                <div class="canvas-wrapper">
+                    <canvas id="game-canvas" width="700" height="550"></canvas>
+                </div>
+                <div class="controls-guide">移動: WASD / 矢印キー | アクション: SPACE | 管理人UI: Cキー</div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- 最終確認モーダル（管理人UI） -->
+    <div id="confirm-modal" class="modal-overlay hidden-element">
+        <div class="modal-content">
+            <h2>🔔 管理人の最終確認</h2>
+            <p>以下の仕分け予定を一括実行（コミット）します。よろしいですか？</p>
+            <div class="table-wrapper">
+                <table class="confirm-table">
+                    <thead>
+                        <tr>
+                            <th>ファイル名</th>
+                            <th>処理</th>
+                            <th>移動先 / 状態</th>
+                        </tr>
+                    </thead>
+                    <tbody id="confirm-list-body"></tbody>
+                </table>
+            </div>
+            <div class="modal-actions">
+                <button id="modal-cancel-btn" class="btn-secondary">まだ整理する</button>
+                <button id="execute-commit-btn" class="btn-primary">実行する（確定）</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 各種スクリプトの読み込み -->
+    <script src="js/mockSystem.js"></script>
+    <script src="js/transaction.js"></script>
+    <script src="js/engine.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
