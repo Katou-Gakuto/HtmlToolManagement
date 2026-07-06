@@ -56,6 +56,7 @@ body {
     gap: 12px;
     overflow-y: auto;
     scrollbar-width: none;
+    -ms-overflow-style: none;
 }
 .dock-bar::-webkit-scrollbar { display: none; }
 
@@ -151,6 +152,8 @@ body {
     align-items: center;
     user-select: none;
     border-bottom: 1px solid #4a5568;
+    -webkit-user-select: none; 
+    user-select: none;
 }
 
 .drag-handle {
@@ -248,3 +251,42 @@ canvas {
 .confirm-table th, .confirm-table td { padding: 8px; border-bottom: 1px solid #4a5568; text-align: left; }
 .modal-actions { display: flex; gap: 15px; justify-content: flex-end; }
 .hidden-element { display: none !important; }
+
+/* 左パネルのコンテナを相対位置にする */
+#left-side-panel {
+    position: relative;
+    min-width: 150px;
+    max-width: 600px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 横幅調整用ハンドル */
+.resizer-x {
+    width: 6px;
+    background: #444;
+    cursor: col-resize;
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 10;
+    transition: background 0.2s;
+}
+
+.resizer-x:hover {
+    background: #666;
+}
+/* --- ドックボタンの状態スタイル --- */
+.dock-btn {
+    /* ...既存のスタイル... */
+    transition: all 0.2s ease;
+    border-left: 3px solid transparent; /* 状態変化をわかりやすくするための線 */
+}
+
+/* 💡 ONの時のスタイル */
+.dock-btn.active {
+    background-color: #2b6cb0; /* 少し明るい青 */
+    border-left: 3px solid #63b3ed; /* 左側に明るい線を引く */
+    box-shadow: 0 0 10px rgba(99, 179, 237, 0.4); /* ほんのり光らせる */
+}

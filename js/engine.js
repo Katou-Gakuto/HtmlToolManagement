@@ -136,73 +136,50 @@ class GameEngine {
             window.app.onPlayerInteract(closeEntity);
         }
     }
-
+    
+    /**
+     * 毎フレームの描画処理
+     */
     render() {
+        // 1. キャンバスのクリア
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // 背景グリッド
-        this.ctx.strokeStyle = "#3a4454";
-        this.ctx.lineWidth = 1;
-        for (let x = 0; x < this.canvas.width; x += 40) {
-            this.ctx.beginPath(); this.ctx.moveTo(x, 0); this.ctx.lineTo(x, this.canvas.height); this.ctx.stroke();
-        }
-        for (let y = 0; y < this.canvas.height; y += 40) {
-            this.ctx.beginPath(); this.ctx.moveTo(0, y); this.ctx.lineTo(this.canvas.width, y); this.ctx.stroke();
-        }
+        // 2. プレイヤーの描画
+        this.drawPlayer();
 
+        // 3. エンティティ（ファイル・フォルダ）の描画
         const entities = window.mockSystem.getVisibleEntities();
+        
         entities.forEach(entity => {
-            this.ctx.beginPath();
-            this.ctx.arc(entity.x, entity.y, entity.radius, 0, Math.PI * 2);
+            // 色分け: フォルダは青(folder)、ファイルは灰色(file)
+            this.ctx.fillStyle = (entity.type === 'folder') ? '#4299e1' : '#a0aec0';
             
-            // 状態に応じた動的な色分けの決定
-            if (entity.type === "folder") {
-                this.ctx.fillStyle = "#ecc94b"; // 🏠建物フォルダは常に黄色
-            } else if (entity.type === "npc") {
-                this.ctx.fillStyle = "#ed64a6"; // 🧙‍♂️管理人はピンク
-            } else if (entity.type === "file") {
-                const tx = window.transactionRegistry.getTransactionForFile(entity.id);
-                if (tx) {
-                    if (tx.action === "DELETE") {
-                        this.ctx.fillStyle = "#e53e3e"; // 🗑削除予定は「赤」
-                    } else {
-                        this.ctx.fillStyle = "#3182ce"; // 📁移動予定は「青」
-                    }
-                } else {
-                    this.ctx.fillStyle = "#cbd5e0"; // 未決定（保留含む）は「灰」
-                }
-            }
+            // 矩形の描画
+            this.ctx.fillRect(entity.x, entity.y, 40, 40);
             
-            this.ctx.fill();
-            this.ctx.strokeStyle = "#ffffff";
-            this.ctx.lineWidth = 2;
-            this.ctx.stroke();
-
-            // テキストラベル
-            this.ctx.fillStyle = "#ffffff";
-            this.ctx.font = "12px sans-serif";
-            this.ctx.textAlign = "center";
-            this.ctx.fillText(entity.name, entity.x, entity.y - entity.radius - 8);
+            // 枠線（フォルダとファイルを見やすく）
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.strokeRect(entity.x, entity.y, 40, 40);
             
-            // 予定バッジ文字列
-            if (entity.type === "file") {
-                const tx = window.transactionRegistry.getTransactionForFile(entity.id);
-                if (tx) {
-                    this.ctx.fillStyle = tx.action === "DELETE" ? "#feb2b2" : "#90cdf4";
-                    this.ctx.font = "bold 11px sans-serif";
-                    this.ctx.fillText(`➔ ${tx.proposedDestination}`, entity.x, entity.y + entity.radius + 14);
-                }
-            }
+            // 名前表示
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = '12px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(entity.name, entity.x + 20, entity.y - 10);
         });
+    }
 
-        // プレイヤー
-        this.ctx.beginPath();
-        this.ctx.arc(this.player.x, this.player.y, this.player.radius, 0, Math.PI * 2);
-        this.ctx.fillStyle = "#38a169";
-        this.ctx.fill();
-        this.ctx.strokeStyle = "#ffffff";
-        this.ctx.lineWidth = 2;
-        this.ctx.stroke();
+    /**
+     * プレイヤーを描画するメソッド
+     */
+    drawPlayer() {
+        // プレイヤーの位置(this.player.x, this.player.y)に描画
+        this.ctx.fillStyle = '#f6e05e'; // 黄色のプレイヤー
+        this.ctx.fillRect(this.player.x, this.player.y, 30, 30);
+        
+        // プレイヤーの視認性を上げるための枠
+        this.ctx.strokeStyle = '#000';
+        this.ctx.strokeRect(this.player.x, this.player.y, 30, 30);
     }
 }
 
