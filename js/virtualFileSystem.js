@@ -61,6 +61,7 @@ const VirtualFileSystem = {
                     id: folder.id,
                     name: folder.name,
                     type: folder.type || 'NORMAL', // NORMAL(通常), TARGET(整理先), DELETION_TEMPLE(削除神殿)
+                    parentFolderId: folder.parentFolderId || null, // 親フォルダIDをサポート
                     originalAbsolutePath: folder.originalAbsolutePath,
                     childrenFiles: [] // このフォルダに入っているファイルのIDリスト
                 };
@@ -77,6 +78,7 @@ const VirtualFileSystem = {
                     sizeBytes: file.sizeBytes,
                     originalAbsolutePath: file.originalAbsolutePath,
                     currentFolderId: file.parentFolderId, // 現在仮想空間でどこにいるか
+                    originalFolderId: file.parentFolderId, // ゲーム開始時の初期フォルダ（変更しない）
                     isDeleted: false // 仮想的に削除されたかどうかのフラグ
                 };
 

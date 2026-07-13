@@ -43,10 +43,10 @@ class SpatialAppController {
         // 3. UIドックバーボタンのトグルイベントバインド
         this.setupDockInteractions();
 
-        // 4. ゲームの開始と初期仮想ファイルデータ（VFS）のロード
-        this.bootGameAndLoadInitialData();
+        // 4. スタートモーダルのセットアップ
+        this.setupStartModal();
 
-        addLocalLog("App Boot Sequence completed successfully.", "success");
+        addLocalLog("App Boot Sequence initialized. Waiting for user mode selection...");
     }
 
     /**
@@ -295,26 +295,107 @@ class SpatialAppController {
     }
 
     /**
-     * 初期ゲームスタートとアセット・ダミーデータの展開
+     * スタートモーダルのセットアップ
      */
-    bootGameAndLoadInitialData() {
+    setupStartModal() {
+        const startModal = document.getElementById('start-modal');
+        const btnSelectFolder = document.getElementById('btn-select-folder');
+        const btnNoFolder = document.getElementById('btn-no-folder');
+        const mockFolderPicker = document.getElementById('mock-folder-picker');
+        const btnSubmitMockFolder = document.getElementById('btn-submit-mock-folder');
+        const mockFolderPathInput = document.getElementById('mock-folder-path');
+
+        if (!startModal) return;
+
+        // 「フォルダを選択しないで遊ぶ」
+        btnNoFolder.addEventListener('click', () => {
+            startModal.classList.add('hidden');
+            const data = this.generateVirtualGameData("C:/Users/Player/Downloads");
+            this.startGameWithData(data);
+        });
+
+        // 「フォルダを選択して遊ぶ」
+        btnSelectFolder.addEventListener('click', () => {
+            mockFolderPicker.style.display = 'flex';
+        });
+
+        // フォルダパス確定
+        btnSubmitMockFolder.addEventListener('click', () => {
+            const folderPath = mockFolderPathInput.value.trim() || "C:/Users/Player/Downloads";
+            startModal.classList.add('hidden');
+            const data = this.generateVirtualGameData(folderPath);
+            this.startGameWithData(data);
+        });
+    }
+
+    /**
+     * 仮想ゲームデータの生成 (VFSに合わせた配列形式)
+     */
+    generateVirtualGameData(rootPath) {
+        const normalizedPath = rootPath.replace(/\\/g, '/');
+        const pathParts = normalizedPath.split('/');
+        const rootName = pathParts[pathParts.length - 1] || "Downloads";
+
+        const folders = [
+            { id: 'folder-root', name: rootName, originalAbsolutePath: normalizedPath, type: 'NORMAL' },
+            { id: 'folder-trash', name: 'ゴミ箱 (削除神殿)', originalAbsolutePath: normalizedPath + '/TrashTemple', type: 'DELETION_TEMPLE' },
+            { id: 'folder-docs', name: '書類整理庫', originalAbsolutePath: normalizedPath + '/Documents', type: 'NORMAL' },
+            { id: 'folder-images', name: '画像ギャラリー', originalAbsolutePath: normalizedPath + '/Photos', type: 'NORMAL' },
+            { id: 'folder-music', name: '音楽ホール', originalAbsolutePath: normalizedPath + '/Music', type: 'NORMAL' }
+        ];
+
+        const fileTemplates = [
+            { name: '第1四半期報告書', ext: 'pdf', size: 1240000 },
+            { name: 'プロジェクト計画書', ext: 'docx', size: 45000 },
+            { name: '予算管理シート_2026', ext: 'xlsx', size: 125000 },
+            { name: '発表用スライド_修正版', ext: 'pptx', size: 8900000 },
+            { name: '旅行の思い出', ext: 'jpg', size: 3400000 },
+            { name: 'プロフィール写真', ext: 'png', size: 45000 },
+            { name: 'スクリーンショット_20260713', ext: 'png', size: 820000 },
+            { name: 'お気に入りBGM', ext: 'mp3', size: 5600000 },
+            { name: 'ボイスメモ_001', ext: 'wav', size: 12000000 },
+            { name: 'アイデアメモ', ext: 'txt', size: 1200 },
+            { name: 'game_settings', ext: 'json', size: 512 },
+            { name: 'website_index', ext: 'html', size: 8500 },
+            { name: 'システムログ_バックアップ', ext: 'log', size: 1048576 },
+            { name: '提出書類アーカイブ', ext: 'zip', size: 45000000 },
+            { name: 'アイコン素材', ext: 'svg', size: 8500 },
+            { name: '設計図面', ext: 'pdf', size: 15000000 },
+            { name: '契約書スキャン', ext: 'jpg', size: 2800000 },
+            { name: 'テスト用データベース', ext: 'db', size: 64000000 }
+        ];
+
+        const files = [];
+        fileTemplates.forEach((tpl, idx) => {
+            const fileId = `file-${String(idx + 1).padStart(3, '0')}`;
+            const fileName = `${tpl.name}.${tpl.ext}`;
+            files.push({
+                id: fileId,
+                name: fileName,
+                extension: tpl.ext.toUpperCase(),
+                sizeBytes: tpl.size,
+                originalAbsolutePath: `${normalizedPath}/${fileName}`,
+                parentFolderId: 'folder-root',
+                type: 'file'
+            });
+        });
+
+        return {
+            initialFolders: folders,
+            initialFiles: files
+        };
+    }
+
+    /**
+     * データを使ったゲーム開始
+     */
+    startGameWithData(vfsData) {
         // ゲームエンジンの起動要求
         EventBus.emit('GAME_STARTED');
 
-        // 仮のOSファイルシステムからのデータロード要求
+        // 仮想ファイルシステムへのデータロード要求
         addLocalLog("Requesting initial Virtual File System loads...");
-        EventBus.emit('REQUEST_LOAD_VFS', {
-            initialFolders: [
-                { id: 'folder-root', name: 'Downloads', originalAbsolutePath: 'C:/Downloads' },
-                { id: 'folder-trash', name: 'TrashTemple', type: 'DELETION_TEMPLE', originalAbsolutePath: 'C:/Trash' }
-            ],
-            initialFiles: {
-                'file-001': { id: 'file-001', name: 'weekly_report.pdf', parentFolderId: 'folder-root', type: 'file' },
-                'file-002': { id: 'file-002', name: 'profile_pic.png', parentFolderId: 'folder-root', type: 'file' },
-                'file-003': { id: 'file-003', name: 'game_config.json', parentFolderId: 'folder-root', type: 'file' },
-                'file-004': { id: 'file-004', name: 'Archived_Documents', parentFolderId: 'folder-root', type: 'folder' }
-            }
-        });
+        EventBus.emit('REQUEST_LOAD_VFS', vfsData);
     }
 }
 

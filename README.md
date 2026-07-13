@@ -1,2 +1,0 @@
-# FileManagementGame
-遊びながらファイル管理するゲームを作成環境

@@ -81,13 +81,14 @@ const AudioManager = {
     /**
      * 【処理3: 効果音(SE)の再生】
      * SEは同時に複数鳴る可能性があるため、cloneNodeを使用して複製し、
-     * 重なりを許容して再生します。
+     * 重なりを許容して再生します。音声アセットが見つからない場合はWeb Audio APIで生成します。
      * @param {string} id - AssetLoaderに登録されているオーディオID
      */
     playSE: function(id) {
         const source = AssetLoader.get(id);
         if (!source) {
-            console.warn(`[AudioManager] SEが見つかりません: ${id}`);
+            // アセットファイルが見つからない場合はブラウザ上で動的に効果音を合成して再生
+            this.playSynthesizedSE(id);
             return;
         }
 
@@ -98,6 +99,67 @@ const AudioManager = {
         
         // 再生終了後にメモリ解放
         se.onended = () => { se.remove(); };
+    },
+
+    /**
+     * 音声ファイルが無い場合に、Web Audio APIを用いてシンセサイザー音を再生します。
+     */
+    playSynthesizedSE: function(id) {
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) return;
+            
+            const ctx = new AudioContextClass();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            
+            const now = ctx.currentTime;
+            
+            if (id === 'se_interact') {
+                // 接近・決定時のピッという高音
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.exponentialRampToValueAtTime(1000, now + 0.08);
+                
+                gain.gain.setValueAtTime(this.volume.se * 0.15, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                
+                osc.start(now);
+                osc.stop(now + 0.1);
+            } else if (id === 'se_dash') {
+                // ダッシュ時のシュッというスイープ音
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(350, now);
+                osc.frequency.exponentialRampToValueAtTime(80, now + 0.12);
+                
+                gain.gain.setValueAtTime(this.volume.se * 0.25, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                
+                osc.start(now);
+                osc.stop(now + 0.15);
+            } else {
+                // デフォルト音
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(440, now);
+                
+                gain.gain.setValueAtTime(this.volume.se * 0.1, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                
+                osc.start(now);
+                osc.stop(now + 0.08);
+            }
+            
+            // 再生終了後にContextを破棄
+            setTimeout(() => {
+                ctx.close();
+            }, 300);
+            
+        } catch (e) {
+            console.error("[AudioManager] シンセサイズ効果音の再生に失敗しました:", e);
+        }
     },
 
     /**
