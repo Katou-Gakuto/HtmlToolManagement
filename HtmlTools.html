@@ -296,6 +296,152 @@
             document.getElementById(tabId).classList.add('active');
             document.getElementById(`menu-${tabId}`).classList.add('active');
         }
+
+    	// =================================================================
+        // 【追加分】以下のコードを index.html の </script> の直前に貼り付けてください
+        // =================================================================
+
+        // 画面の自動生成が完了した後に、各ツールの機能を初期化する
+        setTimeout(() => {
+            setupFolderLinesCounter();
+            setupFolderTreeGenerator();
+            setupGithubCalendar();
+        }, 200);
+
+        // -----------------------------------------------------------
+        // 1. フォルダ行数カウンターの実装
+        // -----------------------------------------------------------
+        function setupFolderLinesCounter() {
+            const panel = document.getElementById('folder-lines');
+            if (!panel) return;
+
+            const fileInput = panel.querySelector('input[type="file"]');
+            
+            // 結果表示用のエリアを追加
+            const resultArea = document.createElement('div');
+            resultArea.style.marginTop = '20px';
+            panel.appendChild(resultArea);
+
+            fileInput.addEventListener('change', async (e) => {
+                const files = e.target.files;
+                if (files.length === 0) return;
+
+                resultArea.innerHTML = '<p>計算中...</p>';
+                let totalLines = 0;
+                let fileDetails = '<table style="width:100%; border-collapse:collapse; margin-top:10px;">';
+                fileDetails += '<tr style="background:#f1f1f1;"><th style="border:1px solid #ccc; padding:8px;">ファイル名</th><th style="border:1px solid #ccc; padding:8px;">行数</th></tr>';
+
+                for (const file of files) {
+                    // テキストファイルまたはソースコードらしきものを対象とする簡易判定
+                    if (!file.type.match('text.*') && !file.name.match(/\.(cpp|h|cs|js|html|css|txt|json|md)$/i)) {
+                        continue;
+                    }
+                    try {
+                        const text = await file.text();
+                        // 改行コードで分割して行数を取得
+                        const lines = text.split(/\r\n|\n/).length;
+                        totalLines += lines;
+                        fileDetails += `<tr><td style="border:1px solid #ccc; padding:5px;">${file.webkitRelativePath || file.name}</td><td style="border:1px solid #ccc; padding:5px; text-align:right;">${lines.toLocaleString()} 行</td></tr>`;
+                    } catch (err) {
+                        console.error("読み込みエラー:", file.name);
+                    }
+                }
+                
+                fileDetails += '</table>';
+                resultArea.innerHTML = `<h3 style="color:var(--primary-color);">合計行数: ${totalLines.toLocaleString()} 行</h3>` + fileDetails;
+            });
+        }
+
+        // -----------------------------------------------------------
+        // 2. フォルダ構成 ASCIIツリー生成の実装
+        // -----------------------------------------------------------
+        function setupFolderTreeGenerator() {
+            const panel = document.getElementById('folder-tree');
+            if (!panel) return;
+
+            const fileInput = panel.querySelector('input[type="file"]');
+            const treeOutput = panel.querySelector('.tree-output');
+            
+            fileInput.addEventListener('change', (e) => {
+                const files = e.target.files;
+                if (files.length === 0) return;
+
+                // パス情報から木構造のオブジェクトを作成
+                const root = {};
+                for (const file of files) {
+                    const parts = file.webkitRelativePath.split('/');
+                    let current = root;
+                    for (let i = 0; i < parts.length; i++) {
+                        const part = parts[i];
+                        if (!current[part]) {
+                            current[part] = (i === parts.length - 1) ? null : {}; // ファイルならnull、フォルダなら{}
+                        }
+                        current = current[part];
+                    }
+                }
+
+                // 木構造をASCIIアート文字列に変換する再帰関数
+                function buildTreeString(node, prefix = '') {
+                    let str = '';
+                    const keys = Object.keys(node);
+                    for (let i = 0; i < keys.length; i++) {
+                        const key = keys[i];
+                        const isLast = (i === keys.length - 1);
+                        str += prefix + (isLast ? '└── ' : '├── ') + key + '\n';
+                        
+                        if (node[key] !== null) { // フォルダの場合、再帰
+                            str += buildTreeString(node[key], prefix + (isLast ? '    ' : '│   '));
+                        }
+                    }
+                    return str;
+                }
+
+                const rootName = Object.keys(root)[0];
+                const asciiTree = rootName + '\n' + buildTreeString(root[rootName]);
+                treeOutput.textContent = asciiTree;
+            });
+        }
+
+        // -----------------------------------------------------------
+        // 3. Github変更履歴View（カレンダー草生やし）の実装
+        // -----------------------------------------------------------
+        function setupGithubCalendar() {
+            const panel = document.getElementById('github-history');
+            if (!panel) return;
+
+            const generateBtn = panel.querySelector('button');
+            const grid = document.getElementById('calendar-grid');
+
+            generateBtn.addEventListener('click', () => {
+                grid.innerHTML = ''; // クリア
+                
+                // Githubカレンダーのように横長に配置 (約52週 × 7日)
+                grid.style.display = 'grid';
+                grid.style.gridTemplateColumns = 'repeat(52, 15px)';
+                grid.style.gridTemplateRows = 'repeat(7, 15px)';
+                grid.style.gap = '3px';
+                grid.style.width = 'fit-content';
+
+                const daysInYear = 364; // 52 * 7
+                const colors = ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'];
+
+                for (let i = 0; i < daysInYear; i++) {
+                    const cell = document.createElement('div');
+                    cell.style.width = '15px';
+                    cell.style.height = '15px';
+                    cell.style.borderRadius = '2px';
+                    
+                    // ランダムでコミット数をシミュレート (0が多めになるように)
+                    const randomLvl = Math.random() > 0.6 ? Math.floor(Math.random() * 4) + 1 : 0;
+                    cell.style.backgroundColor = colors[randomLvl];
+                    
+                    // ツールチップ的なもの
+                    cell.title = `Commit Level: ${randomLvl}`;
+                    
+                    grid.appendChild(cell);
+                }
+            });
+        }
     </script>
 </body>
 </html>
