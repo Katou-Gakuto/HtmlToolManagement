@@ -8,7 +8,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
-            --bg-color: #f8f9fa;
+            --bg-color: #f4f6f9;
             --sidebar-bg: #1e222b;
             --sidebar-color: #f8f9fa;
             --primary-color: #0d6efd;
@@ -17,6 +17,7 @@
             --danger-color: #dc3545;
             --success-color: #198754;
             --warning-color: #ffc107;
+            --panel-bg: #ffffff;
         }
         body {
             font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
@@ -34,6 +35,7 @@
             flex-direction: column;
             border-right: 1px solid var(--border-color);
             flex-shrink: 0;
+            z-index: 10;
         }
         .sidebar-header {
             padding: 24px 20px;
@@ -82,10 +84,11 @@
             overflow-y: auto;
             display: flex;
             flex-direction: column;
+            position: relative;
         }
         .tool-panel {
             display: none;
-            background: #fff;
+            background: var(--panel-bg);
             padding: 30px;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.04);
@@ -99,7 +102,7 @@
         .tool-panel.active {
             display: block;
         }
-        h2 {
+        h2.tool-title-header {
             margin-top: 0;
             margin-bottom: 20px;
             border-bottom: 2px solid var(--primary-color);
@@ -185,11 +188,17 @@
         }
         .btn-save {
             background-color: var(--success-color);
-            font-size: 1.05rem;
-            padding: 12px 24px;
+            font-size: 0.95rem;
+            padding: 10px 20px;
         }
         .btn-save:hover {
             background-color: #157347;
+        }
+        .btn-orange {
+            background-color: #fd7e14;
+        }
+        .btn-orange:hover {
+            background-color: #e8590c;
         }
         .badge-list {
             display: flex;
@@ -309,8 +318,7 @@
 
     <!--
         ★このscriptタグの中身が「ツール一覧の実データ」です。
-        「HTMLファイルとして保存」を押すと、このJSON領域がJavaScriptで自動的に更新され、
-        自身が埋め込まれた完全な最新のHTMLがダウンロードされます。
+        ツールを追加すると、このJSON領域が自動で更新されます。
     -->
     <script type="application/json" id="tool-data-embedded">
 [
@@ -363,6 +371,16 @@
         // -----------------------------------------------------------
         // UI & ダイアログ代替システム (No Browser Alerts 対策)
         // -----------------------------------------------------------
+        // システム全域で alert() をトースト表示に差し替える
+        window.alert = function(msg) {
+            showToast(msg);
+        };
+
+        window.confirm = function(msg) {
+            console.log("Confirm bypassed globally:", msg);
+            return true;
+        };
+
         function showToast(message) {
             let container = document.getElementById('toast-container');
             if (!container) {
@@ -376,7 +394,6 @@
             toast.innerHTML = `<span>🔔</span> <span>${message}</span>`;
             container.appendChild(toast);
             
-            // 3秒後にアニメーションを考慮して要素消去
             setTimeout(() => {
                 toast.remove();
             }, 3000);
@@ -396,7 +413,6 @@
                 </div>
             `;
             document.body.appendChild(backdrop);
-            // トランジションが動くように1フレーム遅延
             setTimeout(() => backdrop.classList.add('show'), 10);
 
             const closeDialog = () => {
@@ -412,7 +428,7 @@
         }
 
         // -----------------------------------------------------------
-        // ツール一覧データのローディングフロー (LocalStorage対応)
+        // ツール一覧データのローディングフロー (LocalStorage & Embedded)
         // -----------------------------------------------------------
         const EMBEDDED_DATA = JSON.parse(document.getElementById('tool-data-embedded').textContent);
         let toolList = [];
@@ -434,15 +450,74 @@
         const sidebarMenu = document.getElementById("sidebarMenu");
         const mainContent = document.getElementById("mainContent");
 
-        function extractScripts(rawHtml) {
-            const temp = document.createElement('div');
-            temp.innerHTML = rawHtml;
+        // -----------------------------------------------------------
+        // -----------------------------------------------------------
+        // 貼り付けられたHTMLファイルを安全に解剖し、親を破壊しないようにCSSを隔離する
+        function scopeCss(cssText, prefix) {
+            if (!cssText) return '';
+            // CSSルールごとに分割してセレクタにプレフィックスを自動挿入
+            const blocks = cssText.split('}');
+            const scopedBlocks = blocks.map(block => {
+                const parts = block.split('{');
+                if (parts.length !== 2) return block;
+                const selectorPart = parts[0];
+                const rulesPart = parts[1];
+                
+                const selectors = selectorPart.split(',');
+                const scopedSelectors = selectors.map(sel => {
+                    const s = sel.trim();
+                    if (!s) return '';
+                    // メディアクエリやキーフレーム等はプレフィックスを回避
+                    if (s.startsWith('@') || s.startsWith('from') || s.startsWith('to') || /^\d+%/.test(s)) {
+                        return s;
+                    }
+                    // body / html タグはツールのコンテナ自身に置き換える
+                    if (s === 'body' || s === 'html') {
+                        return prefix;
+                    }
+                    return `${prefix} ${s}`;
+                });
+                
+                return scopedSelectors.join(', ') + ' {' + rulesPart;
+            });
+            return scopedBlocks.join('}');
+        }
+
+        function parsePastedHtml(rawHtml, toolId) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(rawHtml, 'text/html');
+            
+            // 1. スクリプトタグを全て抽出
             const scripts = [];
-            temp.querySelectorAll('script').forEach(s => {
+            doc.querySelectorAll('script').forEach(s => {
                 scripts.push(s.textContent);
                 s.remove();
             });
-            return { html: temp.innerHTML, scripts };
+
+            // 2. スタイルタグを抽出して固有スコープへ書き換え
+            let combinedCss = '';
+            doc.querySelectorAll('style').forEach(s => {
+                combinedCss += s.textContent + '\n';
+                s.remove();
+            });
+
+            const scopedCss = combinedCss ? scopeCss(combinedCss, `#${toolId}`) : '';
+            
+            // 3. body内部の要素を抽出 (なければ全体をマウント)
+            let bodyContent = '';
+            const bodyTag = doc.querySelector('body');
+            if (bodyTag) {
+                bodyContent = bodyTag.innerHTML;
+            } else {
+                bodyContent = doc.documentElement.innerHTML;
+            }
+
+            // スコープ適用済みのCSSをツールパネル直下にインライン適用する
+            if (scopedCss) {
+                bodyContent = `<style>${scopedCss}</style>\n` + bodyContent;
+            }
+
+            return { html: bodyContent, scripts };
         }
 
         function switchTab(tabId) {
@@ -455,14 +530,12 @@
         }
 
         // -----------------------------------------------------------
-        // 保存機能1: HTMLファイルとして直接書き出し（組み込みJSONを自己アップデート）
+        // 保存機能1: HTMLファイルとして直接書き出し
         // -----------------------------------------------------------
         function exportHtml() {
-            // 現在のデータをJSON化して埋め込みscript領域にアップデート
             const dataScript = document.getElementById('tool-data-embedded');
             dataScript.textContent = JSON.stringify(toolList, null, 2);
 
-            // ダウンロード用に表示状態を一旦クリアして複製し、戻す
             const sidebarSnapshot = sidebarMenu.innerHTML;
             const mainSnapshot = mainContent.innerHTML;
             sidebarMenu.innerHTML = '';
@@ -481,106 +554,135 @@
             a.remove();
             URL.revokeObjectURL(url);
 
-            // 画面を元の状態に復元
             sidebarMenu.innerHTML = sidebarSnapshot;
             mainContent.innerHTML = mainSnapshot;
             
-            // タブのイベントリスナーが失われるのを防ぐために再マウント
             renderAll('tool-manager');
-            showToast('HTMLファイルを書き出しました！別端末でも使用可能です。');
         }
 
         // -----------------------------------------------------------
-        // 保存機能2: ブラウザLocalStorageへの同期
+        // 保存機能2: LocalStorageへの書き込み
         // -----------------------------------------------------------
         function saveToLocalStorage() {
             try {
                 localStorage.setItem('tool_manager_list', JSON.stringify(toolList));
-                showToast('ブラウザのLocalStorageに保存しました！リロードしても保持されます。');
             } catch (e) {
-                console.error('保存エラー:', e);
-                showToast('LocalStorageへの保存に失敗しました。');
+                console.error('LocalStorageへの書き込み失敗:', e);
+                showToast('LocalStorageへの同期中にエラーが発生しました。');
             }
         }
 
         function clearLocalStorage() {
-            showConfirm('初期化の確認', 'LocalStorageの保存データを消去し、HTMLのデフォルト初期設定に戻しますか？', () => {
+            showConfirm('初期化の確認', '保存されているすべての追加データをクリアし、標準状態に戻しますか？', () => {
                 localStorage.removeItem('tool_manager_list');
                 loadToolData();
                 renderAll('tool-manager');
-                showToast('LocalStorageを初期化しました。');
+                showToast('同期データを初期化しました。');
             });
         }
 
         // -----------------------------------------------------------
-        // ツール管理者パネル生成
         // -----------------------------------------------------------
         function buildManagerPanel() {
             const panel = document.createElement('div');
             panel.id = 'tool-manager';
             panel.className = 'tool-panel';
             panel.innerHTML = `
-                <h2>⚙️ ツール追加・削除・データ保存</h2>
+                <h2 class="tool-title-header">⚙️ ツールデータ同期・マネージャ</h2>
                 <div class="tm-notice">
-                    <strong>💡 データの保存・同期方法について：</strong><br>
-                    このシステムでは、変更したデータを保持・持ち運ぶために2つの方法を提供しています。<br><br>
-                    <strong>方法①: ブラウザに即時保存 (LocalStorage)</strong><br>
-                    現在のブラウザに変更を記憶させます。ファイルをダウンロードし直さず、すぐ使い続けたい場合に便利です。<br>
-                    <button type="button" id="tm-save-local-btn" style="background-color: var(--primary-color); margin-top:8px;">💾 ブラウザ(LocalStorage)に保存する</button>
-                    <button type="button" id="tm-clear-local-btn" class="btn-secondary" style="margin-top:8px;">🔄 クリアしてリセットする</button>
-                    <br><br>
-                    <strong>方法②: 変更を埋め込んだ完全なHTMLとして保存 (ポータブル形式)</strong><br>
-                    変更した全データをHTMLソース内部に直接書き込んだ状態で、新しいHTMLファイルとしてダウンロードします。このファイルを別PCにコピーしたり他人に送ったりしても、完全にカスタマイズした状態で動作します。<br>
-                    <button type="button" class="btn-save" id="tm-export-btn" style="margin-top:8px;">💾 HTMLファイルとして保存（ダウンロード）</button>
+                    <strong>💡 ツール保存の2つのパターンについて：</strong><br>
+                    追加・削除したツールを保存するために、本環境では完全にセカンドオフラインで駆動する2種類の方法を提供しています。<br><br>
+                    <strong>パターン①: LocalStorageに同期保存 (ブラウザ保存)</strong><br>
+                    現在お使いのブラウザに対して変更内容を記憶させます。HTMLファイルを再作成せず、まずは追加した状態で即時にリロード・利用したい場合に適しています。<br><br>
+                    <strong>パターン②: ソースをマージしたHTMLファイルを生成 (完全ポータブル保存)</strong><br>
+                    追加した全情報をソース内部のJSONに完全に注入し、自分自身のHTMLコードを新規ダウンロードします。これによって<strong>USBメモリで持ち歩いたり、別PCへそのまま送付するだけで完全に同様に動作する</strong>ポータビリティが実現します。
                 </div>
 
                 <h3 style="margin-top:30px; font-size:1.2rem; border-bottom:1px solid var(--border-color); padding-bottom:8px;">＋ 新しいツールを追加</h3>
                 <div class="form-group" style="margin-top:15px;">
-                    <label for="tm-new-title">ツール名（サイドバーに表示される名前）</label>
-                    <input type="text" id="tm-new-title" placeholder="例: ファイル暗号化ツール">
+                    <label for="tm-new-title">ツール名（サイドバーのリンク名）</label>
+                    <input type="text" id="tm-new-title" placeholder="例: 予定管理 Pro">
                 </div>
                 <div class="form-group">
-                    <label for="tm-new-html">HTMLソース / スクリプトを貼り付け</label>
-                    <textarea id="tm-new-html" name="tm-new-html" class="code-input" rows="10" placeholder="&lt;div&gt;...&lt;/div&gt;&#10;&lt;script&gt;&#10;  // ツール内のJavaScriptロジック&#10;&lt;/script&gt;"></textarea>
+                    <label for="tm-new-html">貼り付け対象 (HTML / 独自 CSS / JavaScript 完全ソース対応)</label>
+                    <textarea id="tm-new-html" class="code-input" rows="12" placeholder="&lt;!DOCTYPE html&gt;&#10;&lt;html&gt;&#10;...&lt;style&gt;...&lt;/style&gt;&#10;...&lt;script&gt;...&lt;/script&gt;&#10;&lt;/html&gt;&#10;&#10;★完全なHTMLファイルのソースコードを丸ごと貼り付けることができます。"></textarea>
                 </div>
-                <button type="button" id="tm-add-btn">この画面に追加する</button>
+                
+                <div class="form-group" style="display:flex; flex-wrap:wrap; gap:12px; margin-top:20px;">
+                    <button type="button" id="tm-add-local-btn" class="btn-save">
+                        💾 ブラウザ(LocalStorage)に保存して追加
+                    </button>
+                    <button type="button" id="tm-add-html-btn" class="btn-save btn-orange">
+                        📥 HTMLファイルをダウンロードして追加
+                    </button>
+                    <button type="button" id="tm-clear-local-btn" class="btn-secondary">
+                        🔄 データをクリアしてリセット
+                    </button>
+                </div>
                 <div id="tm-add-msg" style="margin-top:10px;"></div>
 
                 <h3 style="margin-top:40px; font-size:1.2rem; border-bottom:1px solid var(--border-color); padding-bottom:8px;">🗑 登録済みツール一覧（削除）</h3>
                 <div id="tm-list"></div>
             `;
 
-            panel.querySelector('#tm-export-btn').addEventListener('click', exportHtml);
-            panel.querySelector('#tm-save-local-btn').addEventListener('click', saveToLocalStorage);
             panel.querySelector('#tm-clear-local-btn').addEventListener('click', clearLocalStorage);
 
             const titleInput = panel.querySelector('#tm-new-title');
             const htmlInput = panel.querySelector('#tm-new-html');
-            const addBtn = panel.querySelector('#tm-add-btn');
             const msg = panel.querySelector('#tm-add-msg');
 
-            addBtn.addEventListener('click', () => {
+            // 補助的な追加共通ハンドラー
+            function getInputs() {
                 const title = titleInput.value.trim();
                 const rawHtml = htmlInput.value;
                 if (!title) {
-                    msg.innerHTML = '<span style="color:var(--danger-color); font-weight:bold;">ツール名を入力してください</span>';
-                    return;
+                    msg.innerHTML = '<span style="color:var(--danger-color); font-weight:bold;">❌ ツール名を入力してください</span>';
+                    return null;
                 }
                 if (!rawHtml.trim()) {
-                    msg.innerHTML = '<span style="color:var(--danger-color); font-weight:bold;">HTML/スクリプトを入力してください</span>';
-                    return;
+                    msg.innerHTML = '<span style="color:var(--danger-color); font-weight:bold;">❌ ソースコードを貼り付けてください</span>';
+                    return null;
                 }
-                const { html, scripts } = extractScripts(rawHtml);
                 const newId = 'tool-' + Date.now();
+                const { html, scripts } = parsePastedHtml(rawHtml, newId);
+                return { id: newId, title, html, scripts };
+            }
+
+            // パターン① LocalStorage保存で追加
+            panel.querySelector('#tm-add-local-btn').addEventListener('click', () => {
+                const newTool = getInputs();
+                if (!newTool) return;
                 
-                toolList.push({ id: newId, title, html, scripts });
-                msg.innerHTML = '<span style="color:var(--success-color); font-weight:bold;">追加しました！「保存」アクションを行うことで状態を恒久化できます。</span>';
+                toolList.push(newTool);
+                saveToLocalStorage();
                 
                 titleInput.value = '';
                 htmlInput.value = '';
+                msg.innerHTML = '';
                 
-                renderAll(newId);
-                showToast(`新ツール「${title}」を画面に追加しました！`);
+                renderAll(newTool.id);
+                showToast(`「${newTool.title}」をLocalStorageに登録しました！`);
+            });
+
+            // パターン② HTML直接書き出しダウンロードで追加
+            panel.querySelector('#tm-add-html-btn').addEventListener('click', () => {
+                const newTool = getInputs();
+                if (!newTool) return;
+                
+                toolList.push(newTool);
+                saveToLocalStorage(); // ダウンロードに連動して同期も自動反映
+                
+                titleInput.value = '';
+                htmlInput.value = '';
+                msg.innerHTML = '';
+                
+                renderAll(newTool.id);
+                showToast(`「${newTool.title}」を内蔵したHTMLファイルをビルドしダウンロードします。`);
+                
+                // 即時にHTMLをエクスポート
+                setTimeout(() => {
+                    exportHtml();
+                }, 500);
             });
 
             renderToolManagerList(panel);
@@ -592,7 +694,7 @@
             if (!listArea) return;
             listArea.innerHTML = '';
             if (toolList.length === 0) {
-                listArea.innerHTML = '<p style="color:#999; padding:10px;">現在、登録されているツールはありません</p>';
+                listArea.innerHTML = '<p style="color:#999; padding:10px;">現在登録されているツールはありません。</p>';
                 return;
             }
             toolList.forEach(tool => {
@@ -609,8 +711,9 @@
                 delBtn.className = 'btn-danger';
                 delBtn.textContent = '削除';
                 delBtn.addEventListener('click', () => {
-                    showConfirm('削除の確認', `ツール「${tool.title}」を削除しますか？\n（削除を恒久保存するには、保存アクションを行ってください）`, () => {
+                    showConfirm('削除の確認', `ツール「${tool.title}」を削除しますか？\n(削除後に変更を保存する場合は、マネージャーで保存アクションを実行してください)`, () => {
                         toolList = toolList.filter(t => t.id !== tool.id);
+                        saveToLocalStorage();
                         renderAll('tool-manager');
                         showToast(`「${tool.title}」を削除しました。`);
                     });
@@ -621,13 +724,15 @@
         }
 
         // -----------------------------------------------------------
-        // 全体の再レンダリング処理
+        // 全体の再レンダリング & スクリプト実行エンジン
         // -----------------------------------------------------------
         function renderAll(selectId) {
             sidebarMenu.innerHTML = '';
             mainContent.innerHTML = '';
 
-            // 各ツールのパネルとサイドバーアイテムの生成
+            // 登録されている動的JSタグの残骸をクリーンアップ
+            document.querySelectorAll('.pasted-dynamic-script').forEach(el => el.remove());
+
             toolList.forEach(tool => {
                 const li = document.createElement("li");
                 li.id = `menu-${tool.id}`;
@@ -642,6 +747,7 @@
                 panel.className = 'tool-panel';
                 
                 const h2 = document.createElement('h2');
+                h2.className = 'tool-title-header';
                 h2.textContent = tool.title;
                 panel.appendChild(h2);
                 
@@ -650,18 +756,21 @@
                 panel.appendChild(body);
                 mainContent.appendChild(panel);
 
-                // カスタム動的スクリプトの評価
+                // インラインJSをDOMに直接安全にマウントさせてバインド可能にする
                 (tool.scripts || []).forEach(code => {
                     try {
-                        const fn = new Function(code);
-                        fn();
+                        const scriptEl = document.createElement('script');
+                        scriptEl.className = 'pasted-dynamic-script';
+                        scriptEl.id = `script-node-${tool.id}`;
+                        scriptEl.textContent = code;
+                        document.body.appendChild(scriptEl);
                     } catch (e) {
-                        console.error(`ツール「${tool.title}」のスクリプト実行エラー:`, e);
+                        console.error(`ツール「${tool.title}」のスクリプト実行中にエラーが発生:`, e);
                     }
                 });
             });
 
-            // 固定：ツール追加削除＆データマネージャ
+            // 管理用固定サイドパネルの追加
             const mgrLi = document.createElement("li");
             mgrLi.id = `menu-tool-manager`;
             mgrLi.className = 'manager-item';
@@ -674,7 +783,7 @@
             const mgrPanel = buildManagerPanel();
             mainContent.appendChild(mgrPanel);
 
-            // コア搭載ツールのJavaScriptロジック接続
+            // コア搭載済みのプリセットツールのロジック自動結線
             setupFolderLinesCounter();
             setupFolderTreeGenerator();
             setupTxtGroupTool();
@@ -683,7 +792,6 @@
             setupVsErrorViewer();
             setupTreeViewerFilter();
 
-            // 初期選択タブの設定
             let target = selectId;
             if (!target || !document.getElementById(target)) {
                 target = toolList.length > 0 ? toolList[0].id : 'tool-manager';
@@ -692,7 +800,6 @@
         }
 
         // -----------------------------------------------------------
-        // 【内蔵ツール1】TXTファイル自動グループ化結合
         // -----------------------------------------------------------
         function setupTxtGroupTool() {
             const panel = document.getElementById('txt-group');
@@ -721,13 +828,11 @@
                     for (const file of files) {
                         if (!file.name.endsWith('.txt')) continue;
 
-                        // ファイル名からプレフィックス抽出（例: test_01.txt -> test）
                         let groupName = "その他";
                         const match = file.name.match(/^([^_-\s]+)/);
                         if (match) {
                             groupName = match[1];
                         } else {
-                            // フォルダパスがあれば第1階層をグループ名に
                             const parts = file.webkitRelativePath.split('/');
                             if (parts.length > 2) {
                                 groupName = parts[parts.length - 2];
@@ -786,7 +891,6 @@
         }
 
         // -----------------------------------------------------------
-        // 【内蔵ツール2】全TXTファイル結合ツール
         // -----------------------------------------------------------
         function setupTxtAllTool() {
             const panel = document.getElementById('txt-all');
@@ -841,7 +945,6 @@
         }
 
         // -----------------------------------------------------------
-        // 【内蔵ツール3】TXTファイル結合・一括文字コード変換
         // -----------------------------------------------------------
         function setupTxtCombTool() {
             const panel = document.getElementById('txt-comb');
@@ -875,7 +978,6 @@
                         const decoder = new TextDecoder(sourceEnc);
                         const cleanText = decoder.decode(buffer);
                         
-                        // ZIP内構造は元のフォルダ構成を維持
                         const zipPath = file.webkitRelativePath || file.name;
                         zip.file(zipPath, cleanText);
                         convertedCount++;
@@ -908,7 +1010,6 @@
         }
 
         // -----------------------------------------------------------
-        // 【内蔵ツール4】フォルダ行数カウンター
         // -----------------------------------------------------------
         function setupFolderLinesCounter() {
             const panel = document.getElementById('folder-lines');
@@ -929,7 +1030,6 @@
 
                 let count = 0;
                 for (const file of files) {
-                    // 基本的な拡張子チェック
                     if (!file.name.match(/\.(cpp|h|cs|js|ts|jsx|tsx|html|css|txt|json|md|py|java|sh|rb|php)$/i)) {
                         continue;
                     }
@@ -954,9 +1054,8 @@
         }
 
         // -----------------------------------------------------------
-        // 【内蔵ツール5】VS Build Log Error Viewer
         // -----------------------------------------------------------
-        let vsErrorExcludeList = []; // 除外中の部分一致ファイル文字列リスト
+        let vsErrorExcludeList = [];
 
         function setupVsErrorViewer() {
             const panel = document.getElementById('vs-error');
@@ -1014,15 +1113,12 @@
                     return;
                 }
 
-                // フィルターの取得
                 const filterExt = panel.querySelector('#vs-error-ext').value.trim().toLowerCase();
                 const filterFilename = panel.querySelector('#vs-error-filename').value.trim().toLowerCase();
                 const filterCode = panel.querySelector('#vs-error-code').value.trim().toLowerCase();
                 const severity = panel.querySelector('#vs-error-severity').value;
                 const mode = panel.querySelector('#vs-error-mode').value;
 
-                // 正規表現でMSVCログパース
-                // 例: 1>c:\test\main.cpp(12): error C2065: 'x': undeclared identifier
                 const lineRegex = /^\s*(?:\d+>)?(.*)\((\d+)\)\s*:\s*(error|warning)\s+([A-Z0-9]+)\s*:\s*(.*)$/i;
                 const rawLines = rawLog.split('\n');
                 
@@ -1036,20 +1132,18 @@
                     if (match) {
                         const filePath = match[1].trim();
                         const lineNum = match[2];
-                        const type = match[3].toLowerCase(); // error or warning
+                        const type = match[3].toLowerCase();
                         const code = match[4].trim();
                         const message = match[5].trim();
                         
                         const fileName = filePath.split('\\').pop().split('/').pop();
 
-                        // フィルタ判定
                         if (severity === 'error' && type !== 'error') return;
                         if (severity === 'warning' && type !== 'warning') return;
                         if (filterExt && !fileName.toLowerCase().endsWith(filterExt)) return;
                         if (filterFilename && !fileName.toLowerCase().includes(filterFilename)) return;
                         if (filterCode && !code.toLowerCase().includes(filterCode)) return;
 
-                        // 除外フィルタ判定
                         const shouldExclude = vsErrorExcludeList.some(ex => fileName.toLowerCase().includes(ex.toLowerCase()));
                         if (shouldExclude) return;
 
@@ -1070,7 +1164,6 @@
                     }
                 });
 
-                // バッジの更新
                 badgeErr.textContent = `Error : ${errCount}`;
                 badgeWarn.textContent = `Warning : ${warnCount}`;
                 badgeFile.textContent = `File : ${fileSet.size}`;
@@ -1080,7 +1173,6 @@
                     return;
                 }
 
-                // モード別表示生成
                 let htmlOut = '';
                 if (mode === 'all') {
                     htmlOut = `<div style="max-height:500px; overflow-y:auto;"><table style="width:100%; border-collapse:collapse;">`;
@@ -1103,7 +1195,6 @@
                     });
                     htmlOut += '</ul>';
                 } else if (mode === 'summary') {
-                    // ファイルごとにグループ化
                     const grouped = {};
                     errors.forEach(e => {
                         if (!grouped[e.fileName]) grouped[e.fileName] = [];
@@ -1115,9 +1206,15 @@
                         const errs = fileErrors.filter(x => x.type === 'error').length;
                         const warns = fileErrors.filter(x => x.type === 'warning').length;
 
+                        // toggleAction を内部定義
+                        window[`toggleFileAccordion_${index}`] = function() {
+                            const t = document.getElementById(`vs-file-child-${index}`);
+                            if (t) t.style.display = t.style.display === 'none' ? 'block' : 'none';
+                        };
+
                         htmlOut += `
                             <div style="border: 1px solid var(--border-color); border-radius:6px; margin-bottom:10px; overflow:hidden;">
-                                <div style="background:#f1f3f5; padding:10px 15px; cursor:pointer; display:flex; justify-content:space-between; font-family:monospace;" onclick="const t = document.getElementById('vs-file-child-${index}'); t.style.display = t.style.display === 'none' ? 'block' : 'none';">
+                                <div style="background:#f1f3f5; padding:10px 15px; cursor:pointer; display:flex; justify-content:space-between; font-family:monospace;" onclick="window.toggleFileAccordion_${index}()">
                                     <strong>📁 ${fname}</strong>
                                     <span style="font-size:0.85rem; color:#495057;">
                                         <span style="color:var(--danger-color); font-weight:bold;">● Error: ${errs}</span> | 
@@ -1138,7 +1235,6 @@
                         `;
                     });
                 } else if (mode === 'code') {
-                    // エラーコードによる集計
                     const codeSummary = {};
                     errors.forEach(e => {
                         if (!codeSummary[e.code]) {
@@ -1169,9 +1265,8 @@
         }
 
         // -----------------------------------------------------------
-        // 【内蔵ツール6】ツリー入力・高度フィルタ
         // -----------------------------------------------------------
-        let treeFilterKeywords = []; // フィルターリスト { word, type: 'include' | 'exclude' }
+        let treeFilterKeywords = [];
 
         function setupTreeViewerFilter() {
             const panel = document.getElementById('tree-viewer');
@@ -1196,13 +1291,11 @@
                 const lines = rawText.split('\n');
                 const parsedLines = [];
 
-                // 1. 各行をオブジェクト化し、インデント・名前を判定
                 lines.forEach(line => {
                     const match = line.match(/^([\s│├└─]*)(.+)$/);
                     if (match) {
                         const prefix = match[1];
                         const name = match[2].trim();
-                        // インデントの深さを測る
                         const depth = prefix.replace(/[^\s│]/g, '   ').length;
                         parsedLines.push({
                             raw: line,
@@ -1214,9 +1307,7 @@
                     }
                 });
 
-                // 2. フィルタの適用
                 parsedLines.forEach(node => {
-                    // フォルダのみ表示がチェックされているとき、ファイル（拡張子あり）を除外
                     if (foldersOnlyCheck.checked) {
                         const hasExt = node.name.includes('.') && !node.name.startsWith('.');
                         if (hasExt && !node.name.endsWith('/')) {
@@ -1224,33 +1315,28 @@
                         }
                     }
 
-                    // 登録キーワードを適用
                     treeFilterKeywords.forEach(f => {
                         const hit = node.name.toLowerCase().includes(f.word.toLowerCase());
                         if (f.type === 'exclude' && hit) {
                             node.keep = false;
                         } else if (f.type === 'include' && !hit) {
-                            // 抽出の場合は、マッチしないものを非表示
                             node.keep = false;
                         }
                     });
                 });
 
-                // 3. 構造整合性補正（親が非表示なら子も消す / 子が表示対象なら親フォルダを救い出す）
-                // 下から上にスキャンし、子がkeepなら親（自らの階層より上でかつ一番近い上位階層）を救出
                 for (let i = parsedLines.length - 1; i >= 0; i--) {
                     if (parsedLines[i].keep) {
                         let currentDepth = parsedLines[i].depth;
                         for (let j = i - 1; j >= 0; j--) {
                             if (parsedLines[j].depth < currentDepth) {
-                                parsedLines[j].keep = true; // 親の救出
+                                parsedLines[j].keep = true;
                                 currentDepth = parsedLines[j].depth;
                             }
                         }
                     }
                 }
 
-                // 結合して出力
                 const finalTree = parsedLines
                     .filter(n => n.keep)
                     .map(n => n.raw)
@@ -1300,12 +1386,10 @@
                 showToast('フィルターをリセットしました。');
             });
 
-            // インプット変更時に緩やかに反映
             inputArea.addEventListener('input', applyFilters);
         }
 
         // -----------------------------------------------------------
-        // 【内蔵ツール7】フォルダ構成 ASCIIツリー
         // -----------------------------------------------------------
         function setupFolderTreeGenerator() {
             const panel = document.getElementById('folder-tree');
@@ -1324,7 +1408,6 @@
                     return;
                 }
                 
-                // クリップボードへコピー処理
                 const tempTextarea = document.createElement('textarea');
                 tempTextarea.value = text;
                 document.body.appendChild(tempTextarea);
@@ -1339,7 +1422,6 @@
                 const files = e.target.files;
                 if (files.length === 0) return;
 
-                // 仮想フォルダ構造の構築
                 const root = {};
                 for (const file of files) {
                     const parts = file.webkitRelativePath.split('/');
@@ -1347,18 +1429,15 @@
                     for (let i = 0; i < parts.length; i++) {
                         const part = parts[i];
                         if (!current[part]) {
-                            // 末尾ならnull、フォルダなら空オブジェクト
                             current[part] = (i === parts.length - 1) ? null : {};
                         }
                         current = current[part];
                     }
                 }
 
-                // 構造を再帰的に走査してツリーストリング生成
                 function buildTreeString(node, prefix = '') {
                     let str = '';
                     const keys = Object.keys(node).sort((a, b) => {
-                        // フォルダを優先的に上に配置するソート
                         const aIsDir = node[a] !== null;
                         const bIsDir = node[b] !== null;
                         if (aIsDir && !bIsDir) return -1;
@@ -1391,7 +1470,7 @@
             });
         }
 
-        // アプリケーション初期ロード開始
+        // アプリケーション初期起動処理
         window.onload = function() {
             loadToolData();
             renderAll();
