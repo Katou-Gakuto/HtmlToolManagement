@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webツール一括管理システム（拡張版）</title>
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --sidebar-bg: #212529;
+            --sidebar-color: #f8f9fa;
+            --primary-color: #0d6efd;
+            --border-color: #dee2e6;
+        }
+        body {
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            background-color: var(--bg-color);
+        }
+        /* サイドバー */
+        .sidebar {
+            width: 280px;
+            background-color: var(--sidebar-bg);
+            color: var(--sidebar-color);
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border-color);
+        }
+        .sidebar-header {
+            padding: 20px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-bottom: 1px solid #343a40;
+            text-align: center;
+        }
+        .sidebar-menu {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+        .sidebar-menu li a {
+            display: block;
+            padding: 15px 20px;
+            color: #adb5bd;
+            text-decoration: none;
+            transition: all 0.2s;
+            cursor: pointer;
+            border-left: 4px solid transparent;
+        }
+        .sidebar-menu li a:hover, .sidebar-menu li.active a {
+            color: #fff;
+            background-color: #343a40;
+            border-left-color: var(--primary-color);
+        }
+        /* メインコンテンツエリア */
+        .main-content {
+            flex-grow: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+        .tool-panel {
+            display: none;
+            background: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .tool-panel.active {
+            display: block;
+        }
+        h2 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 10px;
+            color: #333;
+        }
+        /* 各ツール共通の汎用スタイル */
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        select, input[type="text"], textarea { width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; }
+        button { background-color: var(--primary-color); color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { opacity: 0.9; }
+        .btn-secondary { background-color: #6c757d; }
+        .badge-list { display: flex; gap: 10px; margin-top: 5px; }
+        .badge { background: #e9ecef; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; }
+        .tree-output { background: #2b2b2b; color: #a9b7c6; font-family: monospace; padding: 15px; border-radius: 4px; white-space: pre-wrap; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-header">🛠️ ツール一括管理</div>
+        <ul class="sidebar-menu" id="sidebarMenu"></ul>
+    </div>
+
+    <div class="main-content" id="mainContent"></div>
+
+    <script>
+        /******************************************************************
+         * 【設定エリア】新しいHTML（ツール）を追加したい時は、
+         * 以下の「toolList」配列の末尾に要素をコピペで追加するだけです！
+         ******************************************************************/
+        const toolList = [
+            {
+                id: "txt-group",
+                title: "TXTファイル自動グループ化結合",
+                html: `
+                    <div class="form-group">
+                        <label>1. 文字コードを選択</label>
+                        <select><option>UTF-8</option><option>Shift-JIS (CP932)</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label>2. フォルダを選択</label>
+                        <input type="file" webkitdirectory directory multiple>
+                    </div>
+                    <button>すべてのグループをZIPでDL</button>
+                `
+            },
+            {
+                id: "txt-all",
+                title: "全TXTファイル結合ツール",
+                html: `
+                    <p style="color:#666;">選択したフォルダ内のすべての .txt ファイルを1つにまとめます。</p>
+                    <div class="form-group">
+                        <label>1. 文字コードを選択</label>
+                        <select><option>UTF-8</option><option>Shift-JIS (CP932)</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label>2. フォルダを選択</label>
+                        <input type="file" webkitdirectory directory multiple>
+                    </div>
+                    <button>結合してダウンロード</button>
+                `
+            },
+            {
+                id: "txt-comb",
+                title: "TXTファイル結合ツール",
+                html: `
+                    <div class="form-group">
+                        <label>1. 文字コードを選択</label>
+                        <select>
+                            <option>UTF-8</option><option>Shift-JIS (CP932)</option><option>EUC-JP</option>
+                            <option>ISO-2022-JP (JIS)</option><option>UTF-16 (LE)</option><option>UTF-16 (BE)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>2. フォルダを選択</label>
+                        <input type="file" webkitdirectory directory multiple>
+                    </div>
+                    <button>結合済みファイルをZIPでダウンロード</button>
+                `
+            },
+            {
+                id: "folder-lines",
+                title: "フォルダ行数カウンター",
+                html: `
+                    <div class="form-group">
+                        <label>フォルダを選択</label>
+                        <input type="file" webkitdirectory directory multiple>
+                    </div>
+                `
+            },
+            {
+                id: "vs-error",
+                title: "VS Build Log Error Viewer",
+                html: `
+                    <div class="form-group">
+                        <label>表示モード</label>
+                        <select>
+                            <option>見え方1（全エラー行）</option><option>見え方2（ファイルのみ）</option>
+                            <option>見え方3（ファイル＋エラー集約）</option><option>見え方4（エラーコード一覧）</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label><input type="checkbox" checked> Warning表示</label></div>
+                    <fieldset style="border:1px solid var(--border-color); padding:15px; margin-bottom:15px; border-radius:4px;">
+                        <legend>▼ 絞り込みフィルター（空欄＝すべて対象）</legend>
+                        <div class="form-group"><label>拡張子（例: .cpp,.h）</label><input type="text" placeholder=".cpp,.h"></div>
+                        <div class="form-group"><label>ファイル名（部分一致）</label><input type="text"></div>
+                        <div class="form-group"><label>エラーコード</label><input type="text"></div>
+                        <div class="form-group">
+                            <label>エラー種別</label>
+                            <select><option>error + warning</option><option>error のみ</option><option>warning のみ</option></select>
+                        </div>
+                    </fieldset>
+                    <fieldset style="border:1px solid var(--border-color); padding:15px; margin-bottom:15px; border-radius:4px;">
+                        <legend>▼ 除外ファイル設定</legend>
+                        <div class="form-group"><label>モード: <input type="radio" name="ex-mode" checked> テキスト入力 &nbsp; <input type="radio" name="ex-mode"> チェックボックス</label></div>
+                        <div class="form-group">
+                            <label>除外するファイル名（部分一致）— カンマ区切りで複数指定可</label>
+                            <input type="text" style="width:calc(100% - 90px); display:inline-block;"> <button type="button" style="width:80px;">追加</button>
+                        </div>
+                        <button type="button" class="btn-secondary" style="margin-bottom:15px;">除外リストをクリア</button>
+                        <p><strong>描画後に表示されたファイルから除外するものを選択</strong></p>
+                        <div style="margin-bottom:10px;">
+                            <button type="button" class="btn-secondary">選択したファイルを除外に追加</button>
+                            <button type="button" class="btn-secondary">全選択</button><button type="button" class="btn-secondary">全解除</button>
+                        </div>
+                    </fieldset>
+                    <div style="margin-bottom:20px;"><button type="button" style="font-size:1.2rem; padding:10px 30px;">描画</button></div>
+                    <div class="badge-list"><span class="badge">Error : 0</span><span class="badge">Warning : 0</span><span class="badge">File : 0</span></div>
+                    <div style="margin-top:15px; padding:20px; border:1px dashed #ccc; text-align:center; color:#999;">（描画ボタンを押してください）</div>
+                `
+            },
+            {
+                id: "tree-viewer",
+                title: "ツリー入力・フィルタ",
+                html: `
+                    <h3>[見出し] ツリー入力</h3>
+                    <div class="form-group"><textarea rows="5" placeholder="ここにツリーテキストを入力するか、ファイルを読み込んでください..."></textarea></div>
+                    <button type="button">読み込み ▸ 反映</button>
+                    <h3 style="margin-top:20px;">[見出し] フィルタ</h3>
+                    <button type="button" class="btn-secondary">＋ フィルタ追加</button>
+                    <p style="font-size:0.9rem; color:#666; margin-top:5px;">除外どうし / 抽出どうし = <strong>OR</strong><br>除外グループ と 抽出グループ = <strong>AND</strong></p>
+                    <h3 style="margin-top:20px;">[見出し] 結果ツリー</h3>
+                    <div class="form-group"><label><input type="checkbox"> フォルダのみ表示</label></div>
+                    <div class="tree-output">🌲 結果ツリーがここに表示されます</div>
+                `
+            },
+            {
+                id: "folder-tree",
+                title: "フォルダ構成 ASCIIツリー",
+                html: `
+                    <div class="form-group" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>出力先: <code>output / tree.txt</code></span>
+                        <button type="button" class="btn-secondary" onclick="alert('コピーしました')">📋 コピー</button>
+                    </div>
+                    <div class="form-group">
+                        <label>フォルダを選択してください：</label>
+                        <input type="file" webkitdirectory directory multiple>
+                    </div>
+                    <div class="tree-output">🌲 フォルダを選択するとASCIIツリーが表示されます</div>
+                `
+            },
+            {
+                id: "github-history",
+                title: "Github変更履歴View",
+                html: `
+                    <button type="button" style="margin-bottom:20px;">カレンダー生成</button>
+                    <div>
+                        <p>コミット数レジェンド:</p>
+                        <span style="display:inline-block; width:15px; height:15px; background:#ebedf0; border:1px solid #ccc; vertical-align:middle;"></span> 0
+                        <span style="display:inline-block; width:15px; height:15px; background:#9be9a8; vertical-align:middle; margin-left:10px;"></span> 1
+                        <span style="display:inline-block; width:15px; height:15px; background:#40c463; vertical-align:middle; margin-left:10px;"></span> 2
+                        <span style="display:inline-block; width:15px; height:15px; background:#216e39; vertical-align:middle; margin-left:10px;"></span> 3+
+                    </div>
+                    <div id="calendar-grid" style="margin-top:20px; display:flex; gap:2px; flex-wrap:wrap;"></div>
+                `
+            }
+            /* ★新しいHTML（ツール）を追加したい時は、ここに以下のように追加するだけです！
+               ,
+               {
+                   id: "my-new-tool",
+                   title: "マイ新しいツール",
+                   html: `
+                       <p>ここに新しいHTMLソースコードをそのまま貼り付けます</p>
+                       <button>実行</button>
+                   `
+               }
+            */
+        ];
+
+        // --- システム自動生成・管理ロジック ---
+        const sidebarMenu = document.getElementById("sidebarMenu");
+        const mainContent = document.getElementById("mainContent");
+
+        // リストを元に画面とメニューを自動組み上げ
+        toolList.forEach((tool, index) => {
+            // 1. サイドバーメニューの生成
+            const li = document.createElement("li");
+            li.id = `menu-${tool.id}`;
+            if (index === 0) li.classList.add("active");
+            li.innerHTML = `<a>${tool.title}</a>`;
+            li.addEventListener("click", () => switchTab(tool.id));
+            sidebarMenu.appendChild(li);
+
+            // 2. メインパネル（画面）の生成
+            const panel = document.createElement("div");
+            panel.id = tool.id;
+            panel.className = `tool-panel ${index === 0 ? 'active' : ''}`;
+            panel.innerHTML = `<h2>${tool.title}</h2>${tool.html}`;
+            mainContent.appendChild(panel);
+        });
+
+        // タブ切り替え関数
+        function switchTab(tabId) {
+            // すべてのパネルとメニューをリセット
+            document.querySelectorAll('.tool-panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.sidebar-menu li').forEach(m => m.classList.remove('active'));
+
+            // 対象をアクティブ化
+            document.getElementById(tabId).classList.add('active');
+            document.getElementById(`menu-${tabId}`).classList.add('active');
+        }
+    </script>
+</body>
+</html>
