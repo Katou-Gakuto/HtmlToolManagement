@@ -3,14 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webツール一括管理システム（拡張版）</title>
+    <title>Webツール一括管理システム（完全版）</title>
+    <!-- ブラウザ上でのZIP生成とダウンロードを完全ローカルで実現するためのJSZipを読み込み -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
             --bg-color: #f8f9fa;
-            --sidebar-bg: #212529;
+            --sidebar-bg: #1e222b;
             --sidebar-color: #f8f9fa;
             --primary-color: #0d6efd;
+            --primary-hover: #0b5ed7;
             --border-color: #dee2e6;
+            --danger-color: #dc3545;
+            --success-color: #198754;
+            --warning-color: #ffc107;
         }
         body {
             font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
@@ -18,22 +24,25 @@
             display: flex;
             height: 100vh;
             background-color: var(--bg-color);
+            overflow: hidden;
         }
-        /* サイドバー */
         .sidebar {
-            width: 280px;
+            width: 290px;
             background-color: var(--sidebar-bg);
             color: var(--sidebar-color);
             display: flex;
             flex-direction: column;
             border-right: 1px solid var(--border-color);
+            flex-shrink: 0;
         }
         .sidebar-header {
-            padding: 20px;
-            font-size: 1.2rem;
+            padding: 24px 20px;
+            font-size: 1.25rem;
             font-weight: bold;
-            border-bottom: 1px solid #343a40;
+            border-bottom: 1px solid #2d323f;
             text-align: center;
+            letter-spacing: 0.5px;
+            background-color: #15181f;
         }
         .sidebar-menu {
             list-style: none;
@@ -44,30 +53,48 @@
         }
         .sidebar-menu li a {
             display: block;
-            padding: 15px 20px;
-            color: #adb5bd;
+            padding: 14px 20px;
+            color: #b2b9c0;
             text-decoration: none;
-            transition: all 0.2s;
+            transition: all 0.2s ease;
             cursor: pointer;
             border-left: 4px solid transparent;
+            font-size: 0.95rem;
+        }
+        .sidebar-menu li.manager-item a {
+            color: var(--warning-color);
+            border-top: 1px solid #2d323f;
+            background-color: rgba(255, 193, 7, 0.03);
+            font-weight: bold;
         }
         .sidebar-menu li a:hover, .sidebar-menu li.active a {
             color: #fff;
-            background-color: #343a40;
+            background-color: #2d323f;
             border-left-color: var(--primary-color);
         }
-        /* メインコンテンツエリア */
+        .sidebar-menu li.manager-item.active a {
+            border-left-color: var(--warning-color);
+            background-color: rgba(255, 193, 7, 0.1);
+        }
         .main-content {
             flex-grow: 1;
             padding: 30px;
             overflow-y: auto;
+            display: flex;
+            flex-direction: column;
         }
         .tool-panel {
             display: none;
             background: #fff;
-            padding: 25px;
+            padding: 30px;
             border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         .tool-panel.active {
             display: block;
@@ -76,294 +103,1243 @@
             margin-top: 0;
             margin-bottom: 20px;
             border-bottom: 2px solid var(--primary-color);
-            padding-bottom: 10px;
-            color: #333;
+            padding-bottom: 12px;
+            color: #222;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-        /* 各ツール共通の汎用スタイル */
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        select, input[type="text"], textarea { width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; }
-        button { background-color: var(--primary-color); color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        button:hover { opacity: 0.9; }
-        .btn-secondary { background-color: #6c757d; }
-        .badge-list { display: flex; gap: 10px; margin-top: 5px; }
-        .badge { background: #e9ecef; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; }
-        .tree-output { background: #2b2b2b; color: #a9b7c6; font-family: monospace; padding: 15px; border-radius: 4px; white-space: pre-wrap; margin-top: 10px; }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #444;
+            font-size: 0.9rem;
+        }
+        label.inline {
+            display: inline-flex;
+            align-items: center;
+            font-weight: normal;
+            margin-bottom: 0;
+            cursor: pointer;
+            gap: 6px;
+        }
+        select, input[type="text"], textarea, input[type="file"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-family: inherit;
+            font-size: 0.95rem;
+            transition: border-color 0.15s ease;
+        }
+        select:focus, input[type="text"]:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+        }
+        textarea.code-input {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            background-color: #f8f9fa;
+        }
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.95rem;
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        button:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+        }
+        .btn-secondary:hover {
+            background-color: #5c636a;
+        }
+        .btn-danger {
+            background-color: var(--danger-color);
+        }
+        .btn-danger:hover {
+            background-color: #bb2d3b;
+        }
+        .btn-save {
+            background-color: var(--success-color);
+            font-size: 1.05rem;
+            padding: 12px 24px;
+        }
+        .btn-save:hover {
+            background-color: #157347;
+        }
+        .badge-list {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            margin-bottom: 15px;
+        }
+        .badge {
+            background: #e9ecef;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #495057;
+            border: 1px solid #dee2e6;
+        }
+        .tree-output {
+            background: #23241f;
+            color: #f8f8f2;
+            font-family: 'Consolas', 'Courier New', monospace;
+            padding: 18px;
+            border-radius: 6px;
+            white-space: pre-wrap;
+            margin-top: 15px;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid #3e3d32;
+            box-shadow: inset 0 2px 6px rgba(0,0,0,0.3);
+        }
+        .tm-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .tm-row:hover {
+            background-color: rgba(0,0,0,0.01);
+        }
+        .tm-notice {
+            background: #fff8e1;
+            border-left: 4px solid var(--warning-color);
+            color: #664d03;
+            padding: 16px 20px;
+            border-radius: 4px;
+            margin-bottom: 25px;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+        
+        /* カスタムダイアログ（モーダル） & トーストのスタイル */
+        .custom-dialog-backdrop {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 10000;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+        .custom-dialog-backdrop.show {
+            opacity: 1; pointer-events: auto;
+        }
+        .custom-dialog {
+            background: #fff;
+            padding: 24px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            max-width: 450px;
+            width: 90%;
+            transform: scale(0.9);
+            transition: transform 0.2s ease;
+        }
+        .custom-dialog-backdrop.show .custom-dialog {
+            transform: scale(1);
+        }
+        .custom-dialog-title {
+            font-size: 1.25rem; font-weight: bold; margin-bottom: 12px; color: #222;
+        }
+        .custom-dialog-body {
+            margin-bottom: 20px; color: #555; line-height: 1.5; font-size: 0.95rem;
+        }
+        .custom-dialog-footer {
+            display: flex; justify-content: flex-end; gap: 10px;
+        }
+        
+        .toast-container {
+            position: fixed; bottom: 25px; right: 25px; z-index: 10100;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .toast {
+            background: #212529; color: #fff; padding: 12px 24px; border-radius: 6px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); font-size: 0.9rem; font-weight: 500;
+            display: flex; align-items: center; gap: 10px; min-width: 250px;
+            animation: slideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), fadeOut 0.3s ease 2.7s forwards;
+            border-left: 4px solid var(--primary-color);
+        }
+        @keyframes slideIn {
+            from { transform: translateX(120%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            to { opacity: 0; transform: translateY(-10px); }
+        }
     </style>
 </head>
 <body>
 
     <div class="sidebar">
-        <div class="sidebar-header">🛠️ ツール一括管理</div>
+        <div class="sidebar-header">🛠️ ツール一括管理 Pro</div>
         <ul class="sidebar-menu" id="sidebarMenu"></ul>
     </div>
 
     <div class="main-content" id="mainContent"></div>
 
-    <script>
-        /******************************************************************
-         * 【設定エリア】新しいHTML（ツール）を追加したい時は、
-         * 以下の「toolList」配列の末尾に要素をコピペで追加するだけです！
-         ******************************************************************/
-        const toolList = [
-            {
-                id: "txt-group",
-                title: "TXTファイル自動グループ化結合",
-                html: `
-                    <div class="form-group">
-                        <label>1. 文字コードを選択</label>
-                        <select><option>UTF-8</option><option>Shift-JIS (CP932)</option></select>
-                    </div>
-                    <div class="form-group">
-                        <label>2. フォルダを選択</label>
-                        <input type="file" webkitdirectory directory multiple>
-                    </div>
-                    <button>すべてのグループをZIPでDL</button>
-                `
-            },
-            {
-                id: "txt-all",
-                title: "全TXTファイル結合ツール",
-                html: `
-                    <p style="color:#666;">選択したフォルダ内のすべての .txt ファイルを1つにまとめます。</p>
-                    <div class="form-group">
-                        <label>1. 文字コードを選択</label>
-                        <select><option>UTF-8</option><option>Shift-JIS (CP932)</option></select>
-                    </div>
-                    <div class="form-group">
-                        <label>2. フォルダを選択</label>
-                        <input type="file" webkitdirectory directory multiple>
-                    </div>
-                    <button>結合してダウンロード</button>
-                `
-            },
-            {
-                id: "txt-comb",
-                title: "TXTファイル結合ツール",
-                html: `
-                    <div class="form-group">
-                        <label>1. 文字コードを選択</label>
-                        <select>
-                            <option>UTF-8</option><option>Shift-JIS (CP932)</option><option>EUC-JP</option>
-                            <option>ISO-2022-JP (JIS)</option><option>UTF-16 (LE)</option><option>UTF-16 (BE)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>2. フォルダを選択</label>
-                        <input type="file" webkitdirectory directory multiple>
-                    </div>
-                    <button>結合済みファイルをZIPでダウンロード</button>
-                `
-            },
-            {
-                id: "folder-lines",
-                title: "フォルダ行数カウンター",
-                html: `
-                    <div class="form-group">
-                        <label>フォルダを選択</label>
-                        <input type="file" webkitdirectory directory multiple>
-                    </div>
-                `
-            },
-            {
-                id: "vs-error",
-                title: "VS Build Log Error Viewer",
-                html: `
-                    <div class="form-group">
-                        <label>表示モード</label>
-                        <select>
-                            <option>見え方1（全エラー行）</option><option>見え方2（ファイルのみ）</option>
-                            <option>見え方3（ファイル＋エラー集約）</option><option>見え方4（エラーコード一覧）</option>
-                        </select>
-                    </div>
-                    <div class="form-group"><label><input type="checkbox" checked> Warning表示</label></div>
-                    <fieldset style="border:1px solid var(--border-color); padding:15px; margin-bottom:15px; border-radius:4px;">
-                        <legend>▼ 絞り込みフィルター（空欄＝すべて対象）</legend>
-                        <div class="form-group"><label>拡張子（例: .cpp,.h）</label><input type="text" placeholder=".cpp,.h"></div>
-                        <div class="form-group"><label>ファイル名（部分一致）</label><input type="text"></div>
-                        <div class="form-group"><label>エラーコード</label><input type="text"></div>
-                        <div class="form-group">
-                            <label>エラー種別</label>
-                            <select><option>error + warning</option><option>error のみ</option><option>warning のみ</option></select>
-                        </div>
-                    </fieldset>
-                    <fieldset style="border:1px solid var(--border-color); padding:15px; margin-bottom:15px; border-radius:4px;">
-                        <legend>▼ 除外ファイル設定</legend>
-                        <div class="form-group"><label>モード: <input type="radio" name="ex-mode" checked> テキスト入力 &nbsp; <input type="radio" name="ex-mode"> チェックボックス</label></div>
-                        <div class="form-group">
-                            <label>除外するファイル名（部分一致）— カンマ区切りで複数指定可</label>
-                            <input type="text" style="width:calc(100% - 90px); display:inline-block;"> <button type="button" style="width:80px;">追加</button>
-                        </div>
-                        <button type="button" class="btn-secondary" style="margin-bottom:15px;">除外リストをクリア</button>
-                        <p><strong>描画後に表示されたファイルから除外するものを選択</strong></p>
-                        <div style="margin-bottom:10px;">
-                            <button type="button" class="btn-secondary">選択したファイルを除外に追加</button>
-                            <button type="button" class="btn-secondary">全選択</button><button type="button" class="btn-secondary">全解除</button>
-                        </div>
-                    </fieldset>
-                    <div style="margin-bottom:20px;"><button type="button" style="font-size:1.2rem; padding:10px 30px;">描画</button></div>
-                    <div class="badge-list"><span class="badge">Error : 0</span><span class="badge">Warning : 0</span><span class="badge">File : 0</span></div>
-                    <div style="margin-top:15px; padding:20px; border:1px dashed #ccc; text-align:center; color:#999;">（描画ボタンを押してください）</div>
-                `
-            },
-            {
-                id: "tree-viewer",
-                title: "ツリー入力・フィルタ",
-                html: `
-                    <h3>[見出し] ツリー入力</h3>
-                    <div class="form-group"><textarea rows="5" placeholder="ここにツリーテキストを入力するか、ファイルを読み込んでください..."></textarea></div>
-                    <button type="button">読み込み ▸ 反映</button>
-                    <h3 style="margin-top:20px;">[見出し] フィルタ</h3>
-                    <button type="button" class="btn-secondary">＋ フィルタ追加</button>
-                    <p style="font-size:0.9rem; color:#666; margin-top:5px;">除外どうし / 抽出どうし = <strong>OR</strong><br>除外グループ と 抽出グループ = <strong>AND</strong></p>
-                    <h3 style="margin-top:20px;">[見出し] 結果ツリー</h3>
-                    <div class="form-group"><label><input type="checkbox"> フォルダのみ表示</label></div>
-                    <div class="tree-output">🌲 結果ツリーがここに表示されます</div>
-                `
-            },
-            {
-                id: "folder-tree",
-                title: "フォルダ構成 ASCIIツリー",
-                html: `
-                    <div class="form-group" style="display: flex; justify-content: space-between; align-items: center;">
-                        <span>出力先: <code>output / tree.txt</code></span>
-                        <button type="button" class="btn-secondary" onclick="alert('コピーしました')">📋 コピー</button>
-                    </div>
-                    <div class="form-group">
-                        <label>フォルダを選択してください：</label>
-                        <input type="file" webkitdirectory directory multiple>
-                    </div>
-                    <div class="tree-output">🌲 フォルダを選択するとASCIIツリーが表示されます</div>
-                `
-            },
-            {
-                id: "github-history",
-                title: "Github変更履歴View",
-                html: `
-                    <button type="button" style="margin-bottom:20px;">カレンダー生成</button>
-                    <div>
-                        <p>コミット数レジェンド:</p>
-                        <span style="display:inline-block; width:15px; height:15px; background:#ebedf0; border:1px solid #ccc; vertical-align:middle;"></span> 0
-                        <span style="display:inline-block; width:15px; height:15px; background:#9be9a8; vertical-align:middle; margin-left:10px;"></span> 1
-                        <span style="display:inline-block; width:15px; height:15px; background:#40c463; vertical-align:middle; margin-left:10px;"></span> 2
-                        <span style="display:inline-block; width:15px; height:15px; background:#216e39; vertical-align:middle; margin-left:10px;"></span> 3+
-                    </div>
-                    <div id="calendar-grid" style="margin-top:20px; display:flex; gap:2px; flex-wrap:wrap;"></div>
-                `
-            }
-            /* ★新しいHTML（ツール）を追加したい時は、ここに以下のように追加するだけです！
-               ,
-               {
-                   id: "my-new-tool",
-                   title: "マイ新しいツール",
-                   html: `
-                       <p>ここに新しいHTMLソースコードをそのまま貼り付けます</p>
-                       <button>実行</button>
-                   `
-               }
-            */
-        ];
+    <!--
+        ★このscriptタグの中身が「ツール一覧の実データ」です。
+        「HTMLファイルとして保存」を押すと、このJSON領域がJavaScriptで自動的に更新され、
+        自身が埋め込まれた完全な最新のHTMLがダウンロードされます。
+    -->
+    <script type="application/json" id="tool-data-embedded">
+[
+  {
+    "id": "txt-group",
+    "title": "TXTファイル自動グループ化結合",
+    "html": "\n<p style=\"color:#666; margin-bottom:15px;\">フォルダ内のテキストファイルを、区切り記号（_ や -）に基づき自動グループ化して結合ZIPを作成します。</p>\n<div class=\"form-group\">\n    <label for=\"txt-group-encoding\">1. 文字コードを選択</label>\n    <select id=\"txt-group-encoding\"><option value=\"UTF-8\">UTF-8</option><option value=\"Shift_JIS\">Shift-JIS (CP932)</option></select>\n</div>\n<div class=\"form-group\">\n    <label for=\"txt-group-folder\">2. フォルダを選択</label>\n    <input type=\"file\" id=\"txt-group-folder\" webkitdirectory directory multiple>\n</div>\n<button type=\"button\" id=\"txt-group-btn\">すべてのグループをZIPでDL</button>\n<div class=\"tree-output\" id=\"txt-group-out\" style=\"display:none; max-height:250px;\"></div>\n",
+    "scripts": []
+  },
+  {
+    "id": "txt-all",
+    "title": "全TXTファイル結合ツール",
+    "html": "\n<p style=\"color:#666; margin-bottom:15px;\">選択したフォルダ内のすべての .txt ファイルをパス情報付きで1つにまとめます。</p>\n<div class=\"form-group\">\n    <label for=\"txt-all-encoding\">1. 文字コードを選択</label>\n    <select id=\"txt-all-encoding\"><option value=\"UTF-8\">UTF-8</option><option value=\"Shift_JIS\">Shift-JIS (CP932)</option></select>\n</div>\n<div class=\"form-group\">\n    <label for=\"txt-all-folder\">2. フォルダを選択</label>\n    <input type=\"file\" id=\"txt-all-folder\" webkitdirectory directory multiple>\n</div>\n<button type=\"button\" id=\"txt-all-btn\">結合してダウンロード</button>\n",
+    "scripts": []
+  },
+  {
+    "id": "txt-comb",
+    "title": "TXTファイル結合・一括文字コード変換",
+    "html": "\n<p style=\"color:#666; margin-bottom:15px;\">様々な文字コードが混在したテキストファイルを、自動または指定コードで一括してUTF-8等に変換してZIPダウンロードします。</p>\n<div class=\"form-group\">\n    <label for=\"txt-comb-encoding\">1. 読み込み時の文字コード</label>\n    <select id=\"txt-comb-encoding\">\n        <option value=\"UTF-8\">UTF-8</option>\n        <option value=\"Shift_JIS\">Shift-JIS (CP932)</option>\n        <option value=\"EUC-JP\">EUC-JP</option>\n        <option value=\"UTF-16LE\">UTF-16 (LE)</option>\n        <option value=\"UTF-16BE\">UTF-16 (BE)</option>\n    </select>\n</div>\n<div class=\"form-group\">\n    <label for=\"txt-comb-folder\">2. フォルダを選択</label>\n    <input type=\"file\" id=\"txt-comb-folder\" webkitdirectory directory multiple>\n</div>\n<button type=\"button\" id=\"txt-comb-btn\">クリーン化(UTF-8化)されたZIPをダウンロード</button>\n<div class=\"tree-output\" id=\"txt-comb-out\" style=\"display:none; max-height:250px;\"></div>\n",
+    "scripts": []
+  },
+  {
+    "id": "folder-lines",
+    "title": "フォルダ行数カウンター",
+    "html": "\n<p style=\"color:#666; margin-bottom:15px;\">選択したフォルダ以下に含まれる開発系・テキストファイルのコード行数を個別に測定、および一括集計します。</p>\n<div class=\"form-group\">\n    <label for=\"folder-lines-folder\">フォルダを選択</label>\n    <input type=\"file\" id=\"folder-lines-folder\" webkitdirectory directory multiple>\n</div>\n<div id=\"folder-lines-out\"></div>\n",
+    "scripts": []
+  },
+  {
+    "id": "vs-error",
+    "title": "VS Build Log Error Viewer",
+    "html": "\n<p style=\"color:#666; margin-bottom:15px;\">Visual Studioのビルドログを貼り付けて、エラーや警告をファイルごとに高度にソート・分析・抽出します。</p>\n<div class=\"form-group\">\n    <label for=\"vs-error-log-input\">ビルドログのテキスト（出力ウィンドウの内容を貼り付けてください）</label>\n    <textarea id=\"vs-error-log-input\" class=\"code-input\" rows=\"8\" placeholder=\"1>C:\\Project\\main.cpp(24): error C2065: 'x': 定義されていない識別子です...\"></textarea>\n</div>\n<div class=\"form-group\">\n    <label for=\"vs-error-mode\">表示モード</label>\n    <select id=\"vs-error-mode\">\n        <option value=\"all\">表示モード1（全エラー行）</option>\n        <option value=\"file\">表示モード2（ファイル名のみ一覧）</option>\n        <option value=\"summary\" selected>表示モード3（ファイル＋エラー集約表示）</option>\n        <option value=\"code\">表示モード4（エラーコード集計）</option>\n    </select>\n</div>\n<fieldset style=\"border:1px solid var(--border-color); padding:15px; margin-bottom:15px; border-radius:6px;\">\n    <legend style=\"font-weight:bold; padding:0 8px;\">▼ 絞り込みフィルター（空欄＝すべて対象）</legend>\n    <div class=\"form-group\">\n        <label for=\"vs-error-ext\">拡張子フィルター（例: .cpp,.h）</label>\n        <input type=\"text\" id=\"vs-error-ext\" placeholder=\".cpp,.h\">\n    </div>\n    <div class=\"form-group\">\n        <label for=\"vs-error-filename\">ファイル名部分一致</label>\n        <input type=\"text\" id=\"vs-error-filename\">\n    </div>\n    <div class=\"form-group\">\n        <label for=\"vs-error-code\">エラーコード検索</label>\n        <input type=\"text\" id=\"vs-error-code\">\n    </div>\n    <div class=\"form-group\">\n        <label for=\"vs-error-severity\">重大度</label>\n        <select id=\"vs-error-severity\">\n            <option value=\"both\">error + warning 両方</option>\n            <option value=\"error\">error のみ</option>\n            <option value=\"warning\">warning のみ</option>\n        </select>\n    </div>\n</fieldset>\n<fieldset style=\"border:1px solid var(--border-color); padding:15px; margin-bottom:15px; border-radius:6px;\">\n    <legend style=\"font-weight:bold; padding:0 8px;\">▼ 除外ファイル設定</legend>\n    <div class=\"form-group\">\n        <label for=\"vs-error-exclude-input\">除外するファイル名（部分一致・カンマ区切りで複数指定可）</label>\n        <input type=\"text\" id=\"vs-error-exclude-input\" style=\"width:calc(100% - 100px); display:inline-block;\" placeholder=\"AssemblyInfo, gtest\">\n        <button type=\"button\" id=\"vs-error-exclude-add-btn\" style=\"width:90px; padding:9px;\">登録</button>\n    </div>\n    <div id=\"vs-error-exclude-badges\" style=\"display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px;\"></div>\n    <button type=\"button\" id=\"vs-error-exclude-clear-btn\" class=\"btn-secondary\" style=\"font-size:0.85rem;\">除外リストをクリア</button>\n</fieldset>\n<div style=\"margin-bottom:20px;\">\n    <button type=\"button\" id=\"vs-error-draw-btn\" style=\"font-size:1.1rem; padding:12px 35px;\">🔍 解析＆描画</button>\n</div>\n<div class=\"badge-list\">\n    <span class=\"badge\" id=\"vs-error-badge-err\">Error : 0</span>\n    <span class=\"badge\" id=\"vs-error-badge-warn\">Warning : 0</span>\n    <span class=\"badge\" id=\"vs-error-badge-file\">File : 0</span>\n</div>\n<div id=\"vs-error-out\" class=\"tree-output\" style=\"background:#fff; color:#333; border: 1px dashed #ccc; box-shadow:none;\">（ログを貼り付け、「解析＆描画」ボタンを押してください）</div>\n",
+    "scripts": []
+  },
+  {
+    "id": "tree-viewer",
+    "title": "ツリー入力・高度フィルタ",
+    "html": "\n<p style=\"color:#666; margin-bottom:15px;\">既存のASCIIツリーテキスト（├── 等）を読み込み、不要なファイル拡張子や特定のディレクトリ部分を構造を保ったまま一括フィルタリングします。</p>\n<div class=\"form-group\">\n    <label for=\"tree-viewer-input\">ツリーテキスト入力</label>\n    <textarea id=\"tree-viewer-input\" rows=\"8\" placeholder=\"my-project/\n├── src/\n│   ├── index.js\n│   └── style.css\n└── README.md\"></textarea>\n</div>\n<div class=\"form-group\" style=\"display:flex; gap:10px; align-items:flex-end;\">\n    <div style=\"flex-grow:1;\">\n        <label for=\"tree-viewer-filter-word\">フィルターキーワード</label>\n        <input type=\"text\" id=\"tree-viewer-filter-word\" placeholder=\"例: .css\">\n    </div>\n    <div>\n        <label for=\"tree-viewer-filter-mode\">種別</label>\n        <select id=\"tree-viewer-filter-mode\" style=\"width:150px;\">\n            <option value=\"exclude\">除外 (Remove)</option>\n            <option value=\"include\">抽出 (Keep)</option>\n        </select>\n    </div>\n    <button type=\"button\" id=\"tree-viewer-filter-add-btn\" style=\"padding:10px 15px;\">適用</button>\n</div>\n<div id=\"tree-viewer-filter-badges\" style=\"display:flex; flex-wrap:wrap; gap:5px; margin-bottom:15px;\"></div>\n<div class=\"form-group\">\n    <label class=\"inline\" for=\"tree-viewer-folders-only\">\n        <input type=\"checkbox\" id=\"tree-viewer-folders-only\"> 📁 フォルダ構成のみ抽出（ファイルをすべて非表示）\n    </label>\n</div>\n<button type=\"button\" id=\"tree-viewer-reset-btn\" class=\"btn-secondary\" style=\"margin-bottom:15px;\">フィルター初期化</button>\n<div class=\"tree-output\" id=\"tree-viewer-out\">🌲 解析結果がここに表示されます</div>\n",
+    "scripts": []
+  },
+  {
+    "id": "folder-tree",
+    "title": "フォルダ構成 ASCIIツリー",
+    "html": "\n<p style=\"color:#666; margin-bottom:15px;\">選択したフォルダの構造を完全スキャンし、美しいディレクトリツリー（ASCIIアート）として出力します。</p>\n<div class=\"form-group\" style=\"display: flex; justify-content: space-between; align-items: center;\">\n    <span>出力結果：</span>\n    <button type=\"button\" id=\"folder-tree-copy-btn\" class=\"btn-secondary\">📋 コピーする</button>\n</div>\n<div class=\"form-group\">\n    <label for=\"folder-tree-folder\">フォルダを選択してください</label>\n    <input type=\"file\" id=\"folder-tree-folder\" webkitdirectory directory multiple>\n</div>\n<div class=\"tree-output\" id=\"folder-tree-out\">🌲 フォルダを選択するとここにASCIIツリーが描画されます</div>\n",
+    "scripts": []
+  }
+]
+    </script>
 
-        // --- システム自動生成・管理ロジック ---
+    <script>
+        // -----------------------------------------------------------
+        // UI & ダイアログ代替システム (No Browser Alerts 対策)
+        // -----------------------------------------------------------
+        function showToast(message) {
+            let container = document.getElementById('toast-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'toast-container';
+                container.className = 'toast-container';
+                document.body.appendChild(container);
+            }
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `<span>🔔</span> <span>${message}</span>`;
+            container.appendChild(toast);
+            
+            // 3秒後にアニメーションを考慮して要素消去
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+
+        function showConfirm(title, message, onConfirm) {
+            const backdrop = document.createElement('div');
+            backdrop.className = 'custom-dialog-backdrop';
+            backdrop.innerHTML = `
+                <div class="custom-dialog">
+                    <div class="custom-dialog-title">${title}</div>
+                    <div class="custom-dialog-body">${message}</div>
+                    <div class="custom-dialog-footer">
+                        <button type="button" class="btn-secondary" id="confirm-cancel">キャンセル</button>
+                        <button type="button" class="btn-danger" id="confirm-ok">OK</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(backdrop);
+            // トランジションが動くように1フレーム遅延
+            setTimeout(() => backdrop.classList.add('show'), 10);
+
+            const closeDialog = () => {
+                backdrop.classList.remove('show');
+                setTimeout(() => backdrop.remove(), 200);
+            };
+
+            backdrop.querySelector('#confirm-cancel').addEventListener('click', closeDialog);
+            backdrop.querySelector('#confirm-ok').addEventListener('click', () => {
+                closeDialog();
+                if (onConfirm) onConfirm();
+            });
+        }
+
+        // -----------------------------------------------------------
+        // ツール一覧データのローディングフロー (LocalStorage対応)
+        // -----------------------------------------------------------
+        const EMBEDDED_DATA = JSON.parse(document.getElementById('tool-data-embedded').textContent);
+        let toolList = [];
+
+        function loadToolData() {
+            const localData = localStorage.getItem('tool_manager_list');
+            if (localData) {
+                try {
+                    toolList = JSON.parse(localData);
+                } catch (e) {
+                    console.error('LocalStorageのデータ破損:', e);
+                    toolList = JSON.parse(JSON.stringify(EMBEDDED_DATA));
+                }
+            } else {
+                toolList = JSON.parse(JSON.stringify(EMBEDDED_DATA));
+            }
+        }
+
         const sidebarMenu = document.getElementById("sidebarMenu");
         const mainContent = document.getElementById("mainContent");
 
-        // リストを元に画面とメニューを自動組み上げ
-        toolList.forEach((tool, index) => {
-            // 1. サイドバーメニューの生成
-            const li = document.createElement("li");
-            li.id = `menu-${tool.id}`;
-            if (index === 0) li.classList.add("active");
-            li.innerHTML = `<a>${tool.title}</a>`;
-            li.addEventListener("click", () => switchTab(tool.id));
-            sidebarMenu.appendChild(li);
-
-            // 2. メインパネル（画面）の生成
-            const panel = document.createElement("div");
-            panel.id = tool.id;
-            panel.className = `tool-panel ${index === 0 ? 'active' : ''}`;
-            panel.innerHTML = `<h2>${tool.title}</h2>${tool.html}`;
-            mainContent.appendChild(panel);
-        });
-
-        // タブ切り替え関数
-        function switchTab(tabId) {
-            // すべてのパネルとメニューをリセット
-            document.querySelectorAll('.tool-panel').forEach(p => p.classList.remove('active'));
-            document.querySelectorAll('.sidebar-menu li').forEach(m => m.classList.remove('active'));
-
-            // 対象をアクティブ化
-            document.getElementById(tabId).classList.add('active');
-            document.getElementById(`menu-${tabId}`).classList.add('active');
+        function extractScripts(rawHtml) {
+            const temp = document.createElement('div');
+            temp.innerHTML = rawHtml;
+            const scripts = [];
+            temp.querySelectorAll('script').forEach(s => {
+                scripts.push(s.textContent);
+                s.remove();
+            });
+            return { html: temp.innerHTML, scripts };
         }
 
-
-        // 画面の自動生成が完了した後に、各ツールの機能を初期化する
-        setTimeout(() => {
-            setupFolderLinesCounter();
-            setupFolderTreeGenerator();
-            setupGithubCalendar();
-        }, 200);
+        function switchTab(tabId) {
+            document.querySelectorAll('.tool-panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.sidebar-menu li').forEach(m => m.classList.remove('active'));
+            const panel = document.getElementById(tabId);
+            const menu = document.getElementById(`menu-${tabId}`);
+            if (panel) panel.classList.add('active');
+            if (menu) menu.classList.add('active');
+        }
 
         // -----------------------------------------------------------
-        // 1. フォルダ行数カウンターの実装
+        // 保存機能1: HTMLファイルとして直接書き出し（組み込みJSONを自己アップデート）
+        // -----------------------------------------------------------
+        function exportHtml() {
+            // 現在のデータをJSON化して埋め込みscript領域にアップデート
+            const dataScript = document.getElementById('tool-data-embedded');
+            dataScript.textContent = JSON.stringify(toolList, null, 2);
+
+            // ダウンロード用に表示状態を一旦クリアして複製し、戻す
+            const sidebarSnapshot = sidebarMenu.innerHTML;
+            const mainSnapshot = mainContent.innerHTML;
+            sidebarMenu.innerHTML = '';
+            mainContent.innerHTML = '';
+
+            const htmlStr = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+
+            const blob = new Blob([htmlStr], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const filename = (location.pathname.split('/').pop() || 'tool_manager.html') || 'tool_manager.html';
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename.endsWith('.html') ? filename : 'tool_manager.html';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+
+            // 画面を元の状態に復元
+            sidebarMenu.innerHTML = sidebarSnapshot;
+            mainContent.innerHTML = mainSnapshot;
+            
+            // タブのイベントリスナーが失われるのを防ぐために再マウント
+            renderAll('tool-manager');
+            showToast('HTMLファイルを書き出しました！別端末でも使用可能です。');
+        }
+
+        // -----------------------------------------------------------
+        // 保存機能2: ブラウザLocalStorageへの同期
+        // -----------------------------------------------------------
+        function saveToLocalStorage() {
+            try {
+                localStorage.setItem('tool_manager_list', JSON.stringify(toolList));
+                showToast('ブラウザのLocalStorageに保存しました！リロードしても保持されます。');
+            } catch (e) {
+                console.error('保存エラー:', e);
+                showToast('LocalStorageへの保存に失敗しました。');
+            }
+        }
+
+        function clearLocalStorage() {
+            showConfirm('初期化の確認', 'LocalStorageの保存データを消去し、HTMLのデフォルト初期設定に戻しますか？', () => {
+                localStorage.removeItem('tool_manager_list');
+                loadToolData();
+                renderAll('tool-manager');
+                showToast('LocalStorageを初期化しました。');
+            });
+        }
+
+        // -----------------------------------------------------------
+        // ツール管理者パネル生成
+        // -----------------------------------------------------------
+        function buildManagerPanel() {
+            const panel = document.createElement('div');
+            panel.id = 'tool-manager';
+            panel.className = 'tool-panel';
+            panel.innerHTML = `
+                <h2>⚙️ ツール追加・削除・データ保存</h2>
+                <div class="tm-notice">
+                    <strong>💡 データの保存・同期方法について：</strong><br>
+                    このシステムでは、変更したデータを保持・持ち運ぶために2つの方法を提供しています。<br><br>
+                    <strong>方法①: ブラウザに即時保存 (LocalStorage)</strong><br>
+                    現在のブラウザに変更を記憶させます。ファイルをダウンロードし直さず、すぐ使い続けたい場合に便利です。<br>
+                    <button type="button" id="tm-save-local-btn" style="background-color: var(--primary-color); margin-top:8px;">💾 ブラウザ(LocalStorage)に保存する</button>
+                    <button type="button" id="tm-clear-local-btn" class="btn-secondary" style="margin-top:8px;">🔄 クリアしてリセットする</button>
+                    <br><br>
+                    <strong>方法②: 変更を埋め込んだ完全なHTMLとして保存 (ポータブル形式)</strong><br>
+                    変更した全データをHTMLソース内部に直接書き込んだ状態で、新しいHTMLファイルとしてダウンロードします。このファイルを別PCにコピーしたり他人に送ったりしても、完全にカスタマイズした状態で動作します。<br>
+                    <button type="button" class="btn-save" id="tm-export-btn" style="margin-top:8px;">💾 HTMLファイルとして保存（ダウンロード）</button>
+                </div>
+
+                <h3 style="margin-top:30px; font-size:1.2rem; border-bottom:1px solid var(--border-color); padding-bottom:8px;">＋ 新しいツールを追加</h3>
+                <div class="form-group" style="margin-top:15px;">
+                    <label for="tm-new-title">ツール名（サイドバーに表示される名前）</label>
+                    <input type="text" id="tm-new-title" placeholder="例: ファイル暗号化ツール">
+                </div>
+                <div class="form-group">
+                    <label for="tm-new-html">HTMLソース / スクリプトを貼り付け</label>
+                    <textarea id="tm-new-html" name="tm-new-html" class="code-input" rows="10" placeholder="&lt;div&gt;...&lt;/div&gt;&#10;&lt;script&gt;&#10;  // ツール内のJavaScriptロジック&#10;&lt;/script&gt;"></textarea>
+                </div>
+                <button type="button" id="tm-add-btn">この画面に追加する</button>
+                <div id="tm-add-msg" style="margin-top:10px;"></div>
+
+                <h3 style="margin-top:40px; font-size:1.2rem; border-bottom:1px solid var(--border-color); padding-bottom:8px;">🗑 登録済みツール一覧（削除）</h3>
+                <div id="tm-list"></div>
+            `;
+
+            panel.querySelector('#tm-export-btn').addEventListener('click', exportHtml);
+            panel.querySelector('#tm-save-local-btn').addEventListener('click', saveToLocalStorage);
+            panel.querySelector('#tm-clear-local-btn').addEventListener('click', clearLocalStorage);
+
+            const titleInput = panel.querySelector('#tm-new-title');
+            const htmlInput = panel.querySelector('#tm-new-html');
+            const addBtn = panel.querySelector('#tm-add-btn');
+            const msg = panel.querySelector('#tm-add-msg');
+
+            addBtn.addEventListener('click', () => {
+                const title = titleInput.value.trim();
+                const rawHtml = htmlInput.value;
+                if (!title) {
+                    msg.innerHTML = '<span style="color:var(--danger-color); font-weight:bold;">ツール名を入力してください</span>';
+                    return;
+                }
+                if (!rawHtml.trim()) {
+                    msg.innerHTML = '<span style="color:var(--danger-color); font-weight:bold;">HTML/スクリプトを入力してください</span>';
+                    return;
+                }
+                const { html, scripts } = extractScripts(rawHtml);
+                const newId = 'tool-' + Date.now();
+                
+                toolList.push({ id: newId, title, html, scripts });
+                msg.innerHTML = '<span style="color:var(--success-color); font-weight:bold;">追加しました！「保存」アクションを行うことで状態を恒久化できます。</span>';
+                
+                titleInput.value = '';
+                htmlInput.value = '';
+                
+                renderAll(newId);
+                showToast(`新ツール「${title}」を画面に追加しました！`);
+            });
+
+            renderToolManagerList(panel);
+            return panel;
+        }
+
+        function renderToolManagerList(managerPanel) {
+            const listArea = managerPanel.querySelector('#tm-list');
+            if (!listArea) return;
+            listArea.innerHTML = '';
+            if (toolList.length === 0) {
+                listArea.innerHTML = '<p style="color:#999; padding:10px;">現在、登録されているツールはありません</p>';
+                return;
+            }
+            toolList.forEach(tool => {
+                const row = document.createElement('div');
+                row.className = 'tm-row';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.style.fontWeight = 'bold';
+                nameSpan.textContent = tool.title;
+                row.appendChild(nameSpan);
+
+                const delBtn = document.createElement('button');
+                delBtn.type = 'button';
+                delBtn.className = 'btn-danger';
+                delBtn.textContent = '削除';
+                delBtn.addEventListener('click', () => {
+                    showConfirm('削除の確認', `ツール「${tool.title}」を削除しますか？\n（削除を恒久保存するには、保存アクションを行ってください）`, () => {
+                        toolList = toolList.filter(t => t.id !== tool.id);
+                        renderAll('tool-manager');
+                        showToast(`「${tool.title}」を削除しました。`);
+                    });
+                });
+                row.appendChild(delBtn);
+                listArea.appendChild(row);
+            });
+        }
+
+        // -----------------------------------------------------------
+        // 全体の再レンダリング処理
+        // -----------------------------------------------------------
+        function renderAll(selectId) {
+            sidebarMenu.innerHTML = '';
+            mainContent.innerHTML = '';
+
+            // 各ツールのパネルとサイドバーアイテムの生成
+            toolList.forEach(tool => {
+                const li = document.createElement("li");
+                li.id = `menu-${tool.id}`;
+                const a = document.createElement('a');
+                a.textContent = tool.title;
+                li.appendChild(a);
+                li.addEventListener("click", () => switchTab(tool.id));
+                sidebarMenu.appendChild(li);
+
+                const panel = document.createElement("div");
+                panel.id = tool.id;
+                panel.className = 'tool-panel';
+                
+                const h2 = document.createElement('h2');
+                h2.textContent = tool.title;
+                panel.appendChild(h2);
+                
+                const body = document.createElement('div');
+                body.innerHTML = tool.html;
+                panel.appendChild(body);
+                mainContent.appendChild(panel);
+
+                // カスタム動的スクリプトの評価
+                (tool.scripts || []).forEach(code => {
+                    try {
+                        const fn = new Function(code);
+                        fn();
+                    } catch (e) {
+                        console.error(`ツール「${tool.title}」のスクリプト実行エラー:`, e);
+                    }
+                });
+            });
+
+            // 固定：ツール追加削除＆データマネージャ
+            const mgrLi = document.createElement("li");
+            mgrLi.id = `menu-tool-manager`;
+            mgrLi.className = 'manager-item';
+            const mgrA = document.createElement('a');
+            mgrA.innerHTML = '⚙️ データ保存・ツール管理';
+            mgrLi.appendChild(mgrA);
+            mgrLi.addEventListener("click", () => switchTab('tool-manager'));
+            sidebarMenu.appendChild(mgrLi);
+
+            const mgrPanel = buildManagerPanel();
+            mainContent.appendChild(mgrPanel);
+
+            // コア搭載ツールのJavaScriptロジック接続
+            setupFolderLinesCounter();
+            setupFolderTreeGenerator();
+            setupTxtGroupTool();
+            setupTxtAllTool();
+            setupTxtCombTool();
+            setupVsErrorViewer();
+            setupTreeViewerFilter();
+
+            // 初期選択タブの設定
+            let target = selectId;
+            if (!target || !document.getElementById(target)) {
+                target = toolList.length > 0 ? toolList[0].id : 'tool-manager';
+            }
+            switchTab(target);
+        }
+
+        // -----------------------------------------------------------
+        // 【内蔵ツール1】TXTファイル自動グループ化結合
+        // -----------------------------------------------------------
+        function setupTxtGroupTool() {
+            const panel = document.getElementById('txt-group');
+            if (!panel) return;
+            const btn = panel.querySelector('#txt-group-btn');
+            const fileInput = panel.querySelector('#txt-group-folder');
+            const encodingSelect = panel.querySelector('#txt-group-encoding');
+            const output = panel.querySelector('#txt-group-out');
+
+            if (!btn || !fileInput) return;
+
+            btn.addEventListener('click', async () => {
+                const files = fileInput.files;
+                if (!files || files.length === 0) {
+                    showToast('フォルダを選択してください。');
+                    return;
+                }
+
+                output.style.display = 'block';
+                output.textContent = 'ファイルをスキャン中...';
+
+                try {
+                    const groups = {};
+                    const enc = encodingSelect.value;
+
+                    for (const file of files) {
+                        if (!file.name.endsWith('.txt')) continue;
+
+                        // ファイル名からプレフィックス抽出（例: test_01.txt -> test）
+                        let groupName = "その他";
+                        const match = file.name.match(/^([^_-\s]+)/);
+                        if (match) {
+                            groupName = match[1];
+                        } else {
+                            // フォルダパスがあれば第1階層をグループ名に
+                            const parts = file.webkitRelativePath.split('/');
+                            if (parts.length > 2) {
+                                groupName = parts[parts.length - 2];
+                            }
+                        }
+
+                        if (!groups[groupName]) groups[groupName] = [];
+                        groups[groupName].push(file);
+                    }
+
+                    const groupKeys = Object.keys(groups);
+                    if (groupKeys.length === 0) {
+                        output.textContent = '❌ 対象のTXTファイルが見つかりませんでした。';
+                        return;
+                    }
+
+                    output.textContent = `検出されたグループ数: ${groupKeys.length}\n`;
+                    const zip = new JSZip();
+
+                    for (const gKey of groupKeys) {
+                        output.textContent += `▶ Group [ ${gKey} ] を処理中 (${groups[gKey].length}ファイル)...\n`;
+                        let combinedText = `=========================================\n`;
+                        combinedText += ` Group: ${gKey} (Merged dynamically)\n`;
+                        combinedText += `=========================================\n\n`;
+
+                        for (const file of groups[gKey]) {
+                            const buffer = await file.arrayBuffer();
+                            const decoder = new TextDecoder(enc);
+                            const text = decoder.decode(buffer);
+                            combinedText += `\n--- FILE: ${file.name} ---\n`;
+                            combinedText += text + `\n`;
+                        }
+
+                        zip.file(`${gKey}_combined.txt`, combinedText);
+                    }
+
+                    output.textContent += '⚡ ZIP圧縮ファイルを生成中...';
+                    const content = await zip.generateAsync({ type: 'blob' });
+                    
+                    const url = URL.createObjectURL(content);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `grouped_text_archive.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+
+                    output.textContent += '\n🎉 ZIPファイルのダウンロードが完了しました！';
+                    showToast('グループ化結合ZIPをダウンロードしました！');
+                } catch (e) {
+                    output.textContent += `\n❌ エラーが発生しました: ${e.message}`;
+                    console.error(e);
+                }
+            });
+        }
+
+        // -----------------------------------------------------------
+        // 【内蔵ツール2】全TXTファイル結合ツール
+        // -----------------------------------------------------------
+        function setupTxtAllTool() {
+            const panel = document.getElementById('txt-all');
+            if (!panel) return;
+            const btn = panel.querySelector('#txt-all-btn');
+            const fileInput = panel.querySelector('#txt-all-folder');
+            const encodingSelect = panel.querySelector('#txt-all-encoding');
+
+            if (!btn || !fileInput) return;
+
+            btn.addEventListener('click', async () => {
+                const files = fileInput.files;
+                if (!files || files.length === 0) {
+                    showToast('結合対象のフォルダを選択してください。');
+                    return;
+                }
+
+                let allText = '';
+                let processedCount = 0;
+                const enc = encodingSelect.value;
+
+                for (const file of files) {
+                    if (!file.name.endsWith('.txt')) continue;
+                    processedCount++;
+                    const buffer = await file.arrayBuffer();
+                    const decoder = new TextDecoder(enc);
+                    const text = decoder.decode(buffer);
+                    
+                    allText += `\n\n/* ==========================================\n`;
+                    allText += ` * FILE PATH: ${file.webkitRelativePath || file.name}\n`;
+                    allText += ` * ========================================== */\n\n`;
+                    allText += text;
+                }
+
+                if (processedCount === 0) {
+                    showToast('対象のテキストファイルがありませんでした。');
+                    return;
+                }
+
+                const blob = new Blob([allText], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'all_merged_text.txt';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+
+                showToast(`${processedCount}個のテキストファイルを結合してダウンロードしました！`);
+            });
+        }
+
+        // -----------------------------------------------------------
+        // 【内蔵ツール3】TXTファイル結合・一括文字コード変換
+        // -----------------------------------------------------------
+        function setupTxtCombTool() {
+            const panel = document.getElementById('txt-comb');
+            if (!panel) return;
+            const btn = panel.querySelector('#txt-comb-btn');
+            const fileInput = panel.querySelector('#txt-comb-folder');
+            const encodingSelect = panel.querySelector('#txt-comb-encoding');
+            const output = panel.querySelector('#txt-comb-out');
+
+            if (!btn || !fileInput) return;
+
+            btn.addEventListener('click', async () => {
+                const files = fileInput.files;
+                if (!files || files.length === 0) {
+                    showToast('フォルダを選択してください。');
+                    return;
+                }
+
+                output.style.display = 'block';
+                output.textContent = 'デコードおよび変換を開始します...\n';
+                const sourceEnc = encodingSelect.value;
+                const zip = new JSZip();
+                let convertedCount = 0;
+
+                try {
+                    for (const file of files) {
+                        if (!file.name.endsWith('.txt')) continue;
+                        
+                        output.textContent += `🔄 [デコード中] ${file.name} (${sourceEnc})\n`;
+                        const buffer = await file.arrayBuffer();
+                        const decoder = new TextDecoder(sourceEnc);
+                        const cleanText = decoder.decode(buffer);
+                        
+                        // ZIP内構造は元のフォルダ構成を維持
+                        const zipPath = file.webkitRelativePath || file.name;
+                        zip.file(zipPath, cleanText);
+                        convertedCount++;
+                    }
+
+                    if (convertedCount === 0) {
+                        output.textContent += '❌ 対象となるTXTファイルは見つかりませんでした。\n';
+                        return;
+                    }
+
+                    output.textContent += `⚡ ${convertedCount}件のファイルをUTF-8としてZIP構成中...\n`;
+                    const zipContent = await zip.generateAsync({ type: 'blob' });
+                    
+                    const url = URL.createObjectURL(zipContent);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `converted_utf8_archive.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+
+                    output.textContent += '🎉 変換完了、及びダウンロード終了！\n';
+                    showToast('クリーンなUTF-8ファイルをZIPアーカイブとして保存しました。');
+                } catch (e) {
+                    output.textContent += `❌ エラー: ${e.message}\n`;
+                    console.error(e);
+                }
+            });
+        }
+
+        // -----------------------------------------------------------
+        // 【内蔵ツール4】フォルダ行数カウンター
         // -----------------------------------------------------------
         function setupFolderLinesCounter() {
             const panel = document.getElementById('folder-lines');
             if (!panel) return;
 
             const fileInput = panel.querySelector('input[type="file"]');
-            
-            // 結果表示用のエリアを追加
-            const resultArea = document.createElement('div');
-            resultArea.style.marginTop = '20px';
-            panel.appendChild(resultArea);
+            const resultArea = panel.querySelector('#folder-lines-out');
+            if (!fileInput || !resultArea) return;
 
             fileInput.addEventListener('change', async (e) => {
                 const files = e.target.files;
                 if (files.length === 0) return;
 
-                resultArea.innerHTML = '<p>計算中...</p>';
+                resultArea.innerHTML = '<p style="padding:10px;">計算中...</p>';
                 let totalLines = 0;
-                let fileDetails = '<table style="width:100%; border-collapse:collapse; margin-top:10px;">';
-                fileDetails += '<tr style="background:#f1f1f1;"><th style="border:1px solid #ccc; padding:8px;">ファイル名</th><th style="border:1px solid #ccc; padding:8px;">行数</th></tr>';
+                let fileDetails = '<table style="width:100%; border-collapse:collapse; margin-top:15px; font-size:0.9rem;">';
+                fileDetails += '<tr style="background:#f1f1f1;"><th style="border:1px solid #ccc; padding:8px; text-align:left;">ファイル名</th><th style="border:1px solid #ccc; padding:8px; width:120px; text-align:right;">行数</th></tr>';
 
+                let count = 0;
                 for (const file of files) {
-                    // テキストファイルまたはソースコードらしきものを対象とする簡易判定
-                    if (!file.type.match('text.*') && !file.name.match(/\.(cpp|h|cs|js|html|css|txt|json|md)$/i)) {
+                    // 基本的な拡張子チェック
+                    if (!file.name.match(/\.(cpp|h|cs|js|ts|jsx|tsx|html|css|txt|json|md|py|java|sh|rb|php)$/i)) {
                         continue;
                     }
                     try {
                         const text = await file.text();
-                        // 改行コードで分割して行数を取得
                         const lines = text.split(/\r\n|\n/).length;
                         totalLines += lines;
-                        fileDetails += `<tr><td style="border:1px solid #ccc; padding:5px;">${file.webkitRelativePath || file.name}</td><td style="border:1px solid #ccc; padding:5px; text-align:right;">${lines.toLocaleString()} 行</td></tr>`;
+                        count++;
+                        fileDetails += `<tr><td style="border:1px solid #ccc; padding:6px; color:#555;">${file.webkitRelativePath || file.name}</td><td style="border:1px solid #ccc; padding:6px; text-align:right; font-weight:bold;">${lines.toLocaleString()} 行</td></tr>`;
                     } catch (err) {
                         console.error("読み込みエラー:", file.name);
                     }
                 }
-                
+
                 fileDetails += '</table>';
-                resultArea.innerHTML = `<h3 style="color:var(--primary-color);">合計行数: ${totalLines.toLocaleString()} 行</h3>` + fileDetails;
+                if (count === 0) {
+                    resultArea.innerHTML = '<p style="color:var(--danger-color); padding:10px;">コード行数をカウントできる対象ファイルが見つかりませんでした。</p>';
+                } else {
+                    resultArea.innerHTML = `<h3 style="color:var(--primary-color); margin-top:20px;">分析完了: 計 ${count} ファイル (合計行数: ${totalLines.toLocaleString()} 行)</h3>` + fileDetails;
+                }
             });
         }
 
         // -----------------------------------------------------------
-        // 2. フォルダ構成 ASCIIツリー生成の実装
+        // 【内蔵ツール5】VS Build Log Error Viewer
+        // -----------------------------------------------------------
+        let vsErrorExcludeList = []; // 除外中の部分一致ファイル文字列リスト
+
+        function setupVsErrorViewer() {
+            const panel = document.getElementById('vs-error');
+            if (!panel) return;
+
+            const logInput = panel.querySelector('#vs-error-log-input');
+            const drawBtn = panel.querySelector('#vs-error-draw-btn');
+            const resultOut = panel.querySelector('#vs-error-out');
+            
+            const badgeErr = panel.querySelector('#vs-error-badge-err');
+            const badgeWarn = panel.querySelector('#vs-error-badge-warn');
+            const badgeFile = panel.querySelector('#vs-error-badge-file');
+
+            const addExcludeBtn = panel.querySelector('#vs-error-exclude-add-btn');
+            const excludeInput = panel.querySelector('#vs-error-exclude-input');
+            const excludeBadges = panel.querySelector('#vs-error-exclude-badges');
+            const clearExcludeBtn = panel.querySelector('#vs-error-exclude-clear-btn');
+
+            function renderExcludeBadges() {
+                excludeBadges.innerHTML = '';
+                vsErrorExcludeList.forEach((word, idx) => {
+                    const b = document.createElement('span');
+                    b.className = 'badge';
+                    b.style.background = '#ffebeb';
+                    b.style.borderColor = '#ffc5c5';
+                    b.style.color = 'var(--danger-color)';
+                    b.style.cursor = 'pointer';
+                    b.innerHTML = `${word} &times;`;
+                    b.addEventListener('click', () => {
+                        vsErrorExcludeList.splice(idx, 1);
+                        renderExcludeBadges();
+                    });
+                    excludeBadges.appendChild(b);
+                });
+            }
+
+            addExcludeBtn.addEventListener('click', () => {
+                const words = excludeInput.value.split(',').map(s => s.trim()).filter(Boolean);
+                words.forEach(w => {
+                    if (!vsErrorExcludeList.includes(w)) vsErrorExcludeList.push(w);
+                });
+                excludeInput.value = '';
+                renderExcludeBadges();
+            });
+
+            clearExcludeBtn.addEventListener('click', () => {
+                vsErrorExcludeList = [];
+                renderExcludeBadges();
+            });
+
+            drawBtn.addEventListener('click', () => {
+                const rawLog = logInput.value;
+                if (!rawLog.trim()) {
+                    resultOut.innerHTML = '<span style="color:var(--danger-color);">エラーログを入力、または貼り付けしてください。</span>';
+                    return;
+                }
+
+                // フィルターの取得
+                const filterExt = panel.querySelector('#vs-error-ext').value.trim().toLowerCase();
+                const filterFilename = panel.querySelector('#vs-error-filename').value.trim().toLowerCase();
+                const filterCode = panel.querySelector('#vs-error-code').value.trim().toLowerCase();
+                const severity = panel.querySelector('#vs-error-severity').value;
+                const mode = panel.querySelector('#vs-error-mode').value;
+
+                // 正規表現でMSVCログパース
+                // 例: 1>c:\test\main.cpp(12): error C2065: 'x': undeclared identifier
+                const lineRegex = /^\s*(?:\d+>)?(.*)\((\d+)\)\s*:\s*(error|warning)\s+([A-Z0-9]+)\s*:\s*(.*)$/i;
+                const rawLines = rawLog.split('\n');
+                
+                let errors = [];
+                let warnCount = 0;
+                let errCount = 0;
+                let fileSet = new Set();
+
+                rawLines.forEach(line => {
+                    const match = line.match(lineRegex);
+                    if (match) {
+                        const filePath = match[1].trim();
+                        const lineNum = match[2];
+                        const type = match[3].toLowerCase(); // error or warning
+                        const code = match[4].trim();
+                        const message = match[5].trim();
+                        
+                        const fileName = filePath.split('\\').pop().split('/').pop();
+
+                        // フィルタ判定
+                        if (severity === 'error' && type !== 'error') return;
+                        if (severity === 'warning' && type !== 'warning') return;
+                        if (filterExt && !fileName.toLowerCase().endsWith(filterExt)) return;
+                        if (filterFilename && !fileName.toLowerCase().includes(filterFilename)) return;
+                        if (filterCode && !code.toLowerCase().includes(filterCode)) return;
+
+                        // 除外フィルタ判定
+                        const shouldExclude = vsErrorExcludeList.some(ex => fileName.toLowerCase().includes(ex.toLowerCase()));
+                        if (shouldExclude) return;
+
+                        if (type === 'error') errCount++;
+                        else warnCount++;
+
+                        fileSet.add(fileName);
+
+                        errors.push({
+                            filePath,
+                            fileName,
+                            lineNum,
+                            type,
+                            code,
+                            message,
+                            raw: line
+                        });
+                    }
+                });
+
+                // バッジの更新
+                badgeErr.textContent = `Error : ${errCount}`;
+                badgeWarn.textContent = `Warning : ${warnCount}`;
+                badgeFile.textContent = `File : ${fileSet.size}`;
+
+                if (errors.length === 0) {
+                    resultOut.innerHTML = '<span style="color:#666;">解析条件に該当するコンパイルエラー・警告は検出されませんでした。</span>';
+                    return;
+                }
+
+                // モード別表示生成
+                let htmlOut = '';
+                if (mode === 'all') {
+                    htmlOut = `<div style="max-height:500px; overflow-y:auto;"><table style="width:100%; border-collapse:collapse;">`;
+                    htmlOut += `<tr style="background:#f8f9fa;"><th>種別</th><th>ファイル</th><th>行</th><th>コード</th><th>メッセージ</th></tr>`;
+                    errors.forEach(e => {
+                        const color = e.type === 'error' ? 'var(--danger-color)' : '#e5a900';
+                        htmlOut += `<tr style="border-bottom:1px solid #eee;">
+                            <td style="color:${color}; font-weight:bold; padding:6px;">${e.type.toUpperCase()}</td>
+                            <td title="${e.filePath}" style="padding:6px; font-family:monospace;">${e.fileName}</td>
+                            <td style="padding:6px;">${e.lineNum}</td>
+                            <td style="padding:6px; font-weight:bold;">${e.code}</td>
+                            <td style="padding:6px; color:#555;">${e.message}</td>
+                        </tr>`;
+                    });
+                    htmlOut += `</table></div>`;
+                } else if (mode === 'file') {
+                    htmlOut = `<p style="font-weight:bold; margin-bottom:10px;">エラーが検出されたファイル一覧 (計 ${fileSet.size}件)</p><ul>`;
+                    Array.from(fileSet).sort().forEach(f => {
+                        htmlOut += `<li style="font-family:monospace; padding:4px 0;">📄 ${f}</li>`;
+                    });
+                    htmlOut += '</ul>';
+                } else if (mode === 'summary') {
+                    // ファイルごとにグループ化
+                    const grouped = {};
+                    errors.forEach(e => {
+                        if (!grouped[e.fileName]) grouped[e.fileName] = [];
+                        grouped[e.fileName].push(e);
+                    });
+
+                    Object.keys(grouped).forEach((fname, index) => {
+                        const fileErrors = grouped[fname];
+                        const errs = fileErrors.filter(x => x.type === 'error').length;
+                        const warns = fileErrors.filter(x => x.type === 'warning').length;
+
+                        htmlOut += `
+                            <div style="border: 1px solid var(--border-color); border-radius:6px; margin-bottom:10px; overflow:hidden;">
+                                <div style="background:#f1f3f5; padding:10px 15px; cursor:pointer; display:flex; justify-content:space-between; font-family:monospace;" onclick="const t = document.getElementById('vs-file-child-${index}'); t.style.display = t.style.display === 'none' ? 'block' : 'none';">
+                                    <strong>📁 ${fname}</strong>
+                                    <span style="font-size:0.85rem; color:#495057;">
+                                        <span style="color:var(--danger-color); font-weight:bold;">● Error: ${errs}</span> | 
+                                        <span style="color:#e5a900; font-weight:bold;">● Warning: ${warns}</span> (クリックで開閉)
+                                    </span>
+                                </div>
+                                <div id="vs-file-child-${index}" style="padding:15px; background:#fff; border-top:1px solid var(--border-color); display:block;">
+                                    ${fileErrors.map(fe => {
+                                        const color = fe.type === 'error' ? 'var(--danger-color)' : '#e5a900';
+                                        return `<div style="margin-bottom:8px; font-size:0.9rem; border-bottom:1px dashed #eee; padding-bottom:6px;">
+                                            <span style="color:${color}; font-weight:bold;">[${fe.type.toUpperCase()}]</span> 
+                                            行 ${fe.lineNum} / コード: <strong>${fe.code}</strong><br>
+                                            <span style="color:#555;">${fe.message}</span>
+                                        </div>`;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        `;
+                    });
+                } else if (mode === 'code') {
+                    // エラーコードによる集計
+                    const codeSummary = {};
+                    errors.forEach(e => {
+                        if (!codeSummary[e.code]) {
+                            codeSummary[e.code] = { count: 0, type: e.type, messages: new Set() };
+                        }
+                        codeSummary[e.code].count++;
+                        codeSummary[e.code].messages.add(e.message);
+                    });
+
+                    htmlOut = `<table style="width:100%; border-collapse:collapse;">`;
+                    htmlOut += `<tr style="background:#f8f9fa;"><th>コード</th><th>重要度</th><th>発生回数</th><th>検出メッセージ例</th></tr>`;
+                    Object.keys(codeSummary).sort().forEach(code => {
+                        const s = codeSummary[code];
+                        const color = s.type === 'error' ? 'var(--danger-color)' : '#e5a900';
+                        htmlOut += `<tr style="border-bottom:1px solid #eee;">
+                            <td style="font-weight:bold; padding:8px;">${code}</td>
+                            <td style="color:${color}; font-weight:bold; padding:8px;">${s.type.toUpperCase()}</td>
+                            <td style="padding:8px; font-weight:bold;">${s.count} 回</td>
+                            <td style="padding:8px; color:#555; font-size:0.85rem;">${Array.from(s.messages)[0]}</td>
+                        </tr>`;
+                    });
+                    htmlOut += `</table>`;
+                }
+
+                resultOut.innerHTML = htmlOut;
+                showToast('コンパイルログの解析が正常に完了しました！');
+            });
+        }
+
+        // -----------------------------------------------------------
+        // 【内蔵ツール6】ツリー入力・高度フィルタ
+        // -----------------------------------------------------------
+        let treeFilterKeywords = []; // フィルターリスト { word, type: 'include' | 'exclude' }
+
+        function setupTreeViewerFilter() {
+            const panel = document.getElementById('tree-viewer');
+            if (!panel) return;
+
+            const inputArea = panel.querySelector('#tree-viewer-input');
+            const addFilterBtn = panel.querySelector('#tree-viewer-filter-add-btn');
+            const filterWord = panel.querySelector('#tree-viewer-filter-word');
+            const filterMode = panel.querySelector('#tree-viewer-filter-mode');
+            const filterBadges = panel.querySelector('#tree-viewer-filter-badges');
+            const foldersOnlyCheck = panel.querySelector('#tree-viewer-folders-only');
+            const resetBtn = panel.querySelector('#tree-viewer-reset-btn');
+            const outArea = panel.querySelector('#tree-viewer-out');
+
+            function applyFilters() {
+                const rawText = inputArea.value;
+                if (!rawText.trim()) {
+                    outArea.textContent = '🌲 ツリーデータを入力してください。';
+                    return;
+                }
+
+                const lines = rawText.split('\n');
+                const parsedLines = [];
+
+                // 1. 各行をオブジェクト化し、インデント・名前を判定
+                lines.forEach(line => {
+                    const match = line.match(/^([\s│├└─]*)(.+)$/);
+                    if (match) {
+                        const prefix = match[1];
+                        const name = match[2].trim();
+                        // インデントの深さを測る
+                        const depth = prefix.replace(/[^\s│]/g, '   ').length;
+                        parsedLines.push({
+                            raw: line,
+                            prefix,
+                            name,
+                            depth,
+                            keep: true
+                        });
+                    }
+                });
+
+                // 2. フィルタの適用
+                parsedLines.forEach(node => {
+                    // フォルダのみ表示がチェックされているとき、ファイル（拡張子あり）を除外
+                    if (foldersOnlyCheck.checked) {
+                        const hasExt = node.name.includes('.') && !node.name.startsWith('.');
+                        if (hasExt && !node.name.endsWith('/')) {
+                            node.keep = false;
+                        }
+                    }
+
+                    // 登録キーワードを適用
+                    treeFilterKeywords.forEach(f => {
+                        const hit = node.name.toLowerCase().includes(f.word.toLowerCase());
+                        if (f.type === 'exclude' && hit) {
+                            node.keep = false;
+                        } else if (f.type === 'include' && !hit) {
+                            // 抽出の場合は、マッチしないものを非表示
+                            node.keep = false;
+                        }
+                    });
+                });
+
+                // 3. 構造整合性補正（親が非表示なら子も消す / 子が表示対象なら親フォルダを救い出す）
+                // 下から上にスキャンし、子がkeepなら親（自らの階層より上でかつ一番近い上位階層）を救出
+                for (let i = parsedLines.length - 1; i >= 0; i--) {
+                    if (parsedLines[i].keep) {
+                        let currentDepth = parsedLines[i].depth;
+                        for (let j = i - 1; j >= 0; j--) {
+                            if (parsedLines[j].depth < currentDepth) {
+                                parsedLines[j].keep = true; // 親の救出
+                                currentDepth = parsedLines[j].depth;
+                            }
+                        }
+                    }
+                }
+
+                // 結合して出力
+                const finalTree = parsedLines
+                    .filter(n => n.keep)
+                    .map(n => n.raw)
+                    .join('\n');
+
+                outArea.textContent = finalTree || '🌲 フィルターの適用結果、ツリーが空になりました。';
+            }
+
+            function renderFilterBadges() {
+                filterBadges.innerHTML = '';
+                treeFilterKeywords.forEach((f, idx) => {
+                    const b = document.createElement('span');
+                    b.className = 'badge';
+                    const isEx = f.type === 'exclude';
+                    b.style.background = isEx ? '#ffebeb' : '#e6f4ea';
+                    b.style.borderColor = isEx ? '#ffc5c5' : '#b7e1cd';
+                    b.style.color = isEx ? 'var(--danger-color)' : 'var(--success-color)';
+                    b.style.cursor = 'pointer';
+                    b.innerHTML = `<strong>${isEx ? '除外' : '抽出'}:</strong> ${f.word} &times;`;
+                    b.addEventListener('click', () => {
+                        treeFilterKeywords.splice(idx, 1);
+                        renderFilterBadges();
+                        applyFilters();
+                    });
+                    filterBadges.appendChild(b);
+                });
+            }
+
+            addFilterBtn.addEventListener('click', () => {
+                const word = filterWord.value.trim();
+                if (!word) return;
+                const type = filterMode.value;
+
+                treeFilterKeywords.push({ word, type });
+                filterWord.value = '';
+                renderFilterBadges();
+                applyFilters();
+            });
+
+            foldersOnlyCheck.addEventListener('change', applyFilters);
+            
+            resetBtn.addEventListener('click', () => {
+                treeFilterKeywords = [];
+                foldersOnlyCheck.checked = false;
+                renderFilterBadges();
+                applyFilters();
+                showToast('フィルターをリセットしました。');
+            });
+
+            // インプット変更時に緩やかに反映
+            inputArea.addEventListener('input', applyFilters);
+        }
+
+        // -----------------------------------------------------------
+        // 【内蔵ツール7】フォルダ構成 ASCIIツリー
         // -----------------------------------------------------------
         function setupFolderTreeGenerator() {
             const panel = document.getElementById('folder-tree');
             if (!panel) return;
 
             const fileInput = panel.querySelector('input[type="file"]');
-            const treeOutput = panel.querySelector('.tree-output');
+            const treeOutput = panel.querySelector('#folder-tree-out');
+            const copyBtn = panel.querySelector('#folder-tree-copy-btn');
             
+            if (!fileInput || !treeOutput || !copyBtn) return;
+
+            copyBtn.addEventListener('click', () => {
+                const text = treeOutput.textContent;
+                if (!text || text.startsWith('🌲')) {
+                    showToast('コピーするツリーデータが存在しません。');
+                    return;
+                }
+                
+                // クリップボードへコピー処理
+                const tempTextarea = document.createElement('textarea');
+                tempTextarea.value = text;
+                document.body.appendChild(tempTextarea);
+                tempTextarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempTextarea);
+                
+                showToast('ASCIIツリーをクリップボードにコピーしました！');
+            });
+
             fileInput.addEventListener('change', (e) => {
                 const files = e.target.files;
                 if (files.length === 0) return;
 
-                // パス情報から木構造のオブジェクトを作成
+                // 仮想フォルダ構造の構築
                 const root = {};
                 for (const file of files) {
                     const parts = file.webkitRelativePath.split('/');
@@ -371,73 +1347,54 @@
                     for (let i = 0; i < parts.length; i++) {
                         const part = parts[i];
                         if (!current[part]) {
-                            current[part] = (i === parts.length - 1) ? null : {}; // ファイルならnull、フォルダなら{}
+                            // 末尾ならnull、フォルダなら空オブジェクト
+                            current[part] = (i === parts.length - 1) ? null : {};
                         }
                         current = current[part];
                     }
                 }
 
-                // 木構造をASCIIアート文字列に変換する再帰関数
+                // 構造を再帰的に走査してツリーストリング生成
                 function buildTreeString(node, prefix = '') {
                     let str = '';
-                    const keys = Object.keys(node);
+                    const keys = Object.keys(node).sort((a, b) => {
+                        // フォルダを優先的に上に配置するソート
+                        const aIsDir = node[a] !== null;
+                        const bIsDir = node[b] !== null;
+                        if (aIsDir && !bIsDir) return -1;
+                        if (!aIsDir && bIsDir) return 1;
+                        return a.localeCompare(b);
+                    });
+
                     for (let i = 0; i < keys.length; i++) {
                         const key = keys[i];
                         const isLast = (i === keys.length - 1);
-                        str += prefix + (isLast ? '└── ' : '├── ') + key + '\n';
+                        const isDir = node[key] !== null;
                         
-                        if (node[key] !== null) { // フォルダの場合、再帰
-                            str += buildTreeString(node[key], prefix + (isLast ? '    ' : '│   '));
+                        const branch = isLast ? '└── ' : '├── ';
+                        const icon = isDir ? '📁 ' : '📄 ';
+                        
+                        str += prefix + branch + icon + key + '\n';
+
+                        if (isDir) {
+                            const nextPrefix = prefix + (isLast ? '    ' : '│   ');
+                            str += buildTreeString(node[key], nextPrefix);
                         }
                     }
                     return str;
                 }
 
                 const rootName = Object.keys(root)[0];
-                const asciiTree = rootName + '\n' + buildTreeString(root[rootName]);
+                const asciiTree = `📁 ${rootName}\n` + buildTreeString(root[rootName]);
                 treeOutput.textContent = asciiTree;
+                showToast('ASCIIディレクトリツリーを構築しました。');
             });
         }
 
-        // -----------------------------------------------------------
-        // 3. Github変更履歴View（カレンダー草生やし）の実装
-        // -----------------------------------------------------------
-        function setupGithubCalendar() {
-            const panel = document.getElementById('github-history');
-            if (!panel) return;
-
-            const generateBtn = panel.querySelector('button');
-            const grid = document.getElementById('calendar-grid');
-
-            generateBtn.addEventListener('click', () => {
-                grid.innerHTML = ''; // クリア
-                
-                // Githubカレンダーのように横長に配置 (約52週 × 7日)
-                grid.style.display = 'grid';
-                grid.style.gridTemplateColumns = 'repeat(52, 15px)';
-                grid.style.gridTemplateRows = 'repeat(7, 15px)';
-                grid.style.gap = '3px';
-                grid.style.width = 'fit-content';
-
-                const daysInYear = 364; // 52 * 7
-                const colors = ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'];
-
-                for (let i = 0; i < daysInYear; i++) {
-                    const cell = document.createElement('div');
-                    cell.style.width = '15px';
-                    cell.style.height = '15px';
-                    cell.style.borderRadius = '2px';
-                    
-                    // ランダムでコミット数をシミュレート (0が多めになるように)
-                    const randomLvl = Math.random() > 0.6 ? Math.floor(Math.random() * 4) + 1 : 0;
-                    cell.style.backgroundColor = colors[randomLvl];
-                    
-                    // ツールチップ的なもの
-                    cell.title = `Commit Level: ${randomLvl}`;
-                    
-                    grid.appendChild(cell);
-                }
-            });
+        // アプリケーション初期ロード開始
+        window.onload = function() {
+            loadToolData();
+            renderAll();
         }
     </script>
 </body>
